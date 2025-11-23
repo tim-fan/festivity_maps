@@ -11,6 +11,7 @@ import pickle
 import tarfile
 import urllib.request
 import argparse
+from pathlib import Path
 
 from PIL import Image
 import numpy as np
@@ -48,6 +49,67 @@ MODEL_TO_NUM_LAYERS = {
 
 IMAGES_URI = "https://dl.fbaipublicfiles.com/dinov3/notebooks/foreground_segmentation/foreground_segmentation_images.tar.gz"
 LABELS_URI = "https://dl.fbaipublicfiles.com/dinov3/notebooks/foreground_segmentation/foreground_segmentation_labels.tar.gz"
+
+
+def load_dataset_from_directories(images_dir: str, labels_dir: str) -> tuple[list[Image.Image], list[Image.Image]]:
+    """Load images and labels from local directories.
+    
+    Only loads images that have corresponding labels.
+    Matches by filename (e.g., IMG_123.jpg -> IMG_123.png).
+    """
+    images_path = Path(images_dir)
+    labels_path = Path(labels_dir)
+    
+    # Find all label files
+    label_files = sorted(labels_path.glob('*.png'))
+    
+    if not label_files:
+        raise ValueError(f"No label files found in {labels_dir}")
+    
+    images = []
+    labels = []
+    
+    for label_file in label_files:
+        # Find corresponding image file (try common extensions)
+        img_stem = label_file.stem
+        img_file = None
+        
+        for ext in ['.jpg', '.jpeg', '.JPG', '.JPEG', '.png', '.PNG']:
+            candidate = images_path / f"{img_stem}{ext}"
+            if candidate.exists():
+                img_file = candidate
+                break
+        
+        if img_file is None:
+            print(f"Warning: No image found for label {label_file.name}, skipping")
+            continue
+        
+        # Load image and label
+        try:
+            img = Image.open(img_file).convert('RGB')
+            label = Image.open(label_file)
+            
+            # Validate label format
+            if label.mode != 'RGBA':
+                print(f"Warning: Label {label_file.name} is not RGBA mode, skipping")
+                continue
+            
+            if img.size != label.size:
+                print(f"Warning: Image and label size mismatch for {img_file.name}, skipping")
+                continue
+            
+            images.append(img)
+            labels.append(label)
+            
+        except Exception as e:
+            print(f"Error loading {img_file.name} or {label_file.name}: {e}, skipping")
+            continue
+    
+    if not images:
+        raise ValueError("No valid image/label pairs found")
+    
+    print(f"Loaded {len(images)} image/label pairs from {images_dir} and {labels_dir}")
+    return images, labels
 
 
 def load_images_from_remote_tar(tar_uri: str) -> list[Image.Image]:
@@ -288,13 +350,18 @@ def main():
                         help='DINOv3 model to use')
     parser.add_argument('--dinov3-location', type=str, default='./dinov3',
                         help='Path to local DINOv3 repository')
+    parser.add_argument('--images-dir', type=str, default=None,
+                        help='Directory containing training images (if using local dataset)')
+    parser.add_argument('--labels-dir', type=str, default=None,
+                        help='Directory containing label masks (if using local dataset)')
+    parser.add_argument('--use-remote-dataset', action='store_true',
+                        help='Use the remote example dataset instead of local dataset')
     parser.add_argument('--output-dir', type=str, default='./output',
                         help='Directory to save outputs')
     parser.add_argument('--model-save-path', type=str, default='./fg_classifier.pkl',
                         help='Path to save the trained classifier')
-    parser.add_argument('--test-image', type=str, 
-                        default='https://dl.fbaipublicfiles.com/dinov3/notebooks/foreground_segmentation/test_image.jpg',
-                        help='Path or URL to test image')
+    parser.add_argument('--test-image', type=str, default=None,
+                        help='Path or URL to test image (if not provided, uses first image from dataset)')
     parser.add_argument('--optimal-c', type=float, default=0.1,
                         help='Optimal C value for final classifier training')
     parser.add_argument('--skip-cv', action='store_true',
@@ -319,11 +386,32 @@ def main():
     
     # Load training data
     print("\nLoading training data...")
-    images = load_images_from_remote_tar(IMAGES_URI)
-    labels = load_images_from_remote_tar(LABELS_URI)
-    n_images = len(images)
-    assert n_images == len(labels), f"{len(images)=}, {len(labels)=}"
-    print(f"Loaded {n_images} images and labels")
+    if args.use_remote_dataset:
+        # Use remote example dataset
+        images = load_images_from_remote_tar(IMAGES_URI)
+        labels = load_images_from_remote_tar(LABELS_URI)
+        n_images = len(images)
+        assert n_images == len(labels), f"{len(images)=}, {len(labels)=}"
+        print(f"Loaded {n_images} images and labels from remote dataset")
+        # Default test image for remote dataset
+        if args.test_image is None:
+            args.test_image = 'https://dl.fbaipublicfiles.com/dinov3/notebooks/foreground_segmentation/test_image.jpg'
+    else:
+        # Use local dataset
+        if args.images_dir is None or args.labels_dir is None:
+            # Default to the user's dataset
+            args.images_dir = args.images_dir or os.path.expanduser('~/projects/2024/1203_festivity_map/datasets/20241204_low_exposure/images')
+            args.labels_dir = args.labels_dir or os.path.expanduser('~/projects/2024/1203_festivity_map/datasets/20241204_low_exposure/labels')
+        
+        images, labels = load_dataset_from_directories(args.images_dir, args.labels_dir)
+        n_images = len(images)
+        
+        # Save first image temporarily for testing if no test image specified
+        if args.test_image is None:
+            test_image_path = os.path.join(args.output_dir, 'test_image_from_dataset.jpg')
+            images[0].save(test_image_path)
+            args.test_image = test_image_path
+            print(f"Using first training image as test image: {args.test_image}")
     
     # Visualize sample
     visualize_sample(images, labels, data_index=0, 

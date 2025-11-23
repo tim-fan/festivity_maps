@@ -3,6 +3,15 @@ revision = 2
 requires-python = ">=3.12"
 
 [[package]]
+name = "colorama"
+version = "0.4.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
 name = "contourpy"
 version = "1.3.3"
 source = { registry = "https://pypi.org/simple" }
@@ -82,18 +91,34 @@ name = "dino-features"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "lovely-tensors" },
     { name = "matplotlib" },
     { name = "opencv-python" },
     { name = "torch" },
     { name = "torchvision" },
+    { name = "tqdm" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "lovely-tensors", specifier = ">=0.1.20" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "opencv-python", specifier = ">=4.12.0.88" },
     { name = "torch", specifier = "<=2.7.1" },
     { name = "torchvision", specifier = "==0.22.1" },
+    { name = "tqdm", specifier = ">=4.67.1" },
+]
+
+[[package]]
+name = "fastcore"
+version = "1.8.16"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/08/46/c581a997957c30a71f18fddbe79b37968b6d68a9d91f0a0c86b3ecd0adcd/fastcore-1.8.16.tar.gz", hash = "sha256:0d8d5c11d88b36fbc4728a341ffcedcfc62220fbe5b14b442bccb512043d84c9", size = 83669, upload-time = "2025-11-07T23:24:41.944Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/27/f4/30077733807ca57cc504a6faadcdd067714a7891dad66231b0c1ab373551/fastcore-1.8.16-py3-none-any.whl", hash = "sha256:ce49c2580cfcf416a7ee166f9d84f61a828beb6be1315635c6035ec3f626ed4b", size = 86810, upload-time = "2025-11-07T23:24:40.127Z" },
 ]
 
 [[package]]
@@ -237,6 +262,34 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/99/dd/841e9a66c4715477ea0abc78da039832fbb09dac5c35c58dc4c41a407b8a/kiwisolver-1.4.9-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:aedff62918805fb62d43a4aa2ecd4482c380dc76cd31bd7c8878588a61bd0369", size = 2391835, upload-time = "2025-08-10T21:27:34.23Z" },
     { url = "https://files.pythonhosted.org/packages/0c/28/4b2e5c47a0da96896fdfdb006340ade064afa1e63675d01ea5ac222b6d52/kiwisolver-1.4.9-cp314-cp314t-win_amd64.whl", hash = "sha256:1fa333e8b2ce4d9660f2cda9c0e1b6bafcfb2457a9d259faa82289e73ec24891", size = 79988, upload-time = "2025-08-10T21:27:35.587Z" },
     { url = "https://files.pythonhosted.org/packages/80/be/3578e8afd18c88cdf9cb4cffde75a96d2be38c5a903f1ed0ceec061bd09e/kiwisolver-1.4.9-cp314-cp314t-win_arm64.whl", hash = "sha256:4a48a2ce79d65d363597ef7b567ce3d14d68783d2b2263d98db3d9477805ba32", size = 70260, upload-time = "2025-08-10T21:27:36.606Z" },
+]
+
+[[package]]
+name = "lovely-numpy"
+version = "0.2.18"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fastcore" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/34/c4/b752f4a327cfa8f202ff787b34c7e2448a659b5d33763a6f4685473f00d1/lovely_numpy-0.2.18.tar.gz", hash = "sha256:b218feb22ebc4521f92191b4465a48ae3f526d7d83d0c0fa1ed1d63cce98a960", size = 25041, upload-time = "2025-11-17T00:08:01.01Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4b/2d/2e321a29535b28795aefc1f6658d5c474097cb93ab1dead304a1e41dd532/lovely_numpy-0.2.18-py3-none-any.whl", hash = "sha256:f5da3ae3f1edda879169e018248042c17779cba50d29060754d7294ed1a56a3c", size = 24993, upload-time = "2025-11-17T00:08:27.638Z" },
+]
+
+[[package]]
+name = "lovely-tensors"
+version = "0.1.20"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lovely-numpy" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c3/ab/9780efe72a83782de3ac89ff4cfd2248820ecb6bdb17834f4e28aae32fb5/lovely_tensors-0.1.20.tar.gz", hash = "sha256:1c917fa3240bfdc948566b2a91271c34db64b9aa0299d624eefe4f04b592bcbb", size = 23037, upload-time = "2025-11-17T00:23:24.965Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/72/e1/cb293dd66f4e8332e33b0def3e51a6ccc2c7aafe5c6d7921c970ff4679bc/lovely_tensors-0.1.20-py3-none-any.whl", hash = "sha256:9bfac15b2a5747371b11132e5d3b5c16a470a30cac681ebf85a6e4a74cbc48f3", size = 19961, upload-time = "2025-11-17T00:23:23.608Z" },
 ]
 
 [[package]]
@@ -756,6 +809,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ab/c8/2ebe90f18e7ffa2120f5c3eab62aa86923185f78d2d051a455ea91461608/torchvision-0.22.1-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:27142bcc8a984227a6dcf560985e83f52b82a7d3f5fe9051af586a2ccc46ef26", size = 2476561, upload-time = "2025-06-04T17:42:59.691Z" },
     { url = "https://files.pythonhosted.org/packages/94/8b/04c6b15f8c29b39f0679589753091cec8b192ab296d4fdaf9055544c4ec9/torchvision-0.22.1-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:ef46e065502f7300ad6abc98554131c35dc4c837b978d91306658f1a65c00baa", size = 7658543, upload-time = "2025-06-04T17:42:46.064Z" },
     { url = "https://files.pythonhosted.org/packages/ab/c0/131628e6d42682b0502c63fd7f647b8b5ca4bd94088f6c85ca7225db8ac4/torchvision-0.22.1-cp313-cp313t-win_amd64.whl", hash = "sha256:7414eeacfb941fa21acddcd725f1617da5630ec822e498660a4b864d7d998075", size = 1629892, upload-time = "2025-06-04T17:42:57.156Z" },
+]
+
+[[package]]
+name = "tqdm"
+version = "4.67.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737, upload-time = "2024-11-24T20:12:22.481Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540, upload-time = "2024-11-24T20:12:19.698Z" },
 ]
 
 [[package]]

@@ -45,31 +45,37 @@ Here's what the dense output festivity map looks like for a few cases:
   <img src="./doc/result_IMG_20241204_184614.png" alt="A festive scene with festivity map">
   <figcaption>A festive scene, along with festivity map.</figcaption>
 </figure>
+<br/>
 
 <figure>
   <img src="./doc/result_IMG_20241204_184517.png" alt="Street light with festivity map">
   <figcaption>Street lights are not festive.</figcaption>
 </figure>
+<br/>
 
 <figure>
   <img src="./doc/result_IMG_20241204_184647.png" alt="Security light with festivity map">
   <figcaption>Security lights are not festive.</figcaption>
 </figure>
+<br/>
 
 <figure>
   <img src="./doc/result_IMG_20241204_184531.png" alt="Inflatable dinosaur with festivity map">
   <figcaption>Inflatable dinosaurs are festive with probabilty <code>p=1.0</code></figcaption>
 </figure>
+<br/>
 
 <figure>
   <img src="./doc/result_IMG_20241204_190237.png" alt="Festive palm trees with festivity map">
   <figcaption>The most festive image in the dataset, by mean per-pixel festivity.</figcaption>
 </figure>
+<br/>
 
 <figure>
   <img src="./doc/Screenshot%20from%202025-11-23%2018-12-44.png" alt="Grid of festive images sorted by festivity score">
   <figcaption>A selection of images sorted by festivity (top left = most festive). In contrast to CLIP, the rankings are much more consistent/appropriate.</figcaption>
 </figure>
+<br/>
 
 Overall results are very promising, but with some potential areas to explore:
 * Close-up displays take up more pixels than those further away, so achieve higher festivity scores. Consider re-weighting with depth-anything estimates.

@@ -109,6 +109,62 @@ Unfortunately this didn't work on my first attempt, so, limited on time, I decid
 
 I expect this is pure user-error, I just don't have time to debug 🤷.
 
+## Other quick failed experiments
+
+#### Can [SAM 3](https://ai.meta.com/sam3/) segment out the festive parts of the image?
+
+<figure>
+  <img src="./doc/Screenshot from 2025-11-23 12-55-05.png" alt="sam3 test">
+  <figcaption>Prompt: "Brightly lit holiday decoration"</figcaption>
+</figure>
+
+I didn't like how it segmented out the whole tree, this would lead to over-estimation of festive-ness due to the large area segmented. It makes sense for SAM to behave this way - it's probably used to identifying whole objects. 
+
+It also misses the string lights to the right.
+
+I tried a few prompts and was unsatisfied for this task.
+
+#### Can [Nano Banana Pro](https://blog.google/technology/ai/nano-banana-pro/) label my images for me?
+
+Similar approach to above, but I'm thinking just to produce the labelled data (not sure how much API would cost for 10,000s of images).
+
+<figure>
+  <img src="./doc/Screenshot from 2025-11-23 13-18-13.png" alt="banana test">
+  <figcaption>Trying to get nano banana to do segmentation.</figcaption>
+</figure>
+
+Result - segmented almost the whole house. Perhaps this is the wrong VLM for the job.
+
+## Promising quick experiments
+
+#### Can [DA3](https://depth-anything-3.github.io/) be used to weight features by distance?
+
+The idea is that a festive display close-up should not score higher than one far away. Should be simple enough to reweight pixels based on depth(?)
+
+<figure>
+  <img src="./doc/Screenshot from 2025-11-23 22-04-30.png" alt="da3 test">
+  <figcaption>Metric depth estimate from single image</figcaption>
+</figure>
+
+Result - model predicts garage door 26m away - seems reasonable. Probably worth trying the reweighting idea if any close up displays are ranking too high.
+
+
+#### Can [Gemini 3](https://aistudio.google.com/models/gemini-3) produce better ratings than counting festive pixels?
+
+<figure>
+  <img src="./doc/Screenshot from 2025-11-23 22-11-48.png" alt="gemini test">
+  <figcaption>Gemini rates a display</figcaption>
+</figure>
+
+Gemini rates the display 3.8/10, and provides a robust analysis, along with an assesment rubric:
+
+<figure>
+  <img src="./doc/Screenshot from 2025-11-23 22-22-13.png" alt="gemini rubric">
+  <figcaption>Gemini-generated rubric for assessing lighting displays</figcaption>
+</figure>
+
+Perhaps this would be the most robust way to quantify festive-ness. However would have to look at API costs - I expect a full map dataset to be on the order of ~10k images.
+
 ## Next steps
 
 * Reweight based on depth-anything depths

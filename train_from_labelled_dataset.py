@@ -11,6 +11,7 @@ import pickle
 import tarfile
 import urllib.request
 import argparse
+import csv
 from pathlib import Path
 
 from PIL import Image
@@ -288,9 +289,11 @@ def train_final_classifier(xs, ys, c=0.1):
 
 
 def test_classifier(clf, model, model_name, test_image_path, save_path=None):
-    """Test the classifier on a test image."""
-    print(f"\nTesting on image: {test_image_path}")
+    """Test the classifier on a test image.
     
+    Returns:
+        tuple: (mean_fg_score, fg_score) - mean probability and full score map
+    """
     # Load image
     if test_image_path.startswith('http'):
         with urllib.request.urlopen(test_image_path) as f:
@@ -318,21 +321,18 @@ def test_classifier(clf, model, model_name, test_image_path, save_path=None):
     h_patches, w_patches = [int(d / PATCH_SIZE) for d in test_image_resized.shape[1:]]
 
     fg_score = clf.predict_proba(x.numpy())[:, 1].reshape(h_patches, w_patches)
-    fg_score_mf = torch.from_numpy(signal.medfilt2d(fg_score, kernel_size=3))
+    mean_fg_score = fg_score.mean()
 
-    plt.figure(figsize=(12, 4), dpi=150)
-    plt.subplot(1, 3, 1)
+    plt.figure(figsize=(8, 4), dpi=150)
+    plt.subplot(1, 2, 1)
     plt.axis('off')
     plt.imshow(test_image_resized.permute(1, 2, 0))
     plt.title('Input Image')
-    plt.subplot(1, 3, 2)
+    plt.subplot(1, 2, 2)
     plt.axis('off')
-    plt.imshow(fg_score)
-    plt.title('Foreground Score')
-    plt.subplot(1, 3, 3)
-    plt.axis('off')
-    plt.imshow(fg_score_mf)
-    plt.title('+ Median Filter')
+    im = plt.imshow(fg_score, vmin=0, vmax=1, cmap='viridis')
+    plt.colorbar(im, fraction=0.046, pad=0.04)
+    plt.title(f'Festivity Score (mean={mean_fg_score:.3f})')
     
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
@@ -340,6 +340,8 @@ def test_classifier(clf, model, model_name, test_image_path, save_path=None):
     else:
         plt.show()
     plt.close()
+    
+    return mean_fg_score, fg_score
 
 
 def main():
@@ -362,6 +364,10 @@ def main():
                         help='Path to save the trained classifier')
     parser.add_argument('--test-image', type=str, default=None,
                         help='Path or URL to test image (if not provided, uses first image from dataset)')
+    parser.add_argument('--test-all-images', action='store_true',
+                        help='Run inference on all images in the images directory after training')
+    parser.add_argument('--csv-output', type=str, default=None,
+                        help='Path to save CSV with image paths and mean probabilities (used with --test-all-images)')
     parser.add_argument('--optimal-c', type=float, default=0.1,
                         help='Optimal C value for final classifier training')
     parser.add_argument('--skip-cv', action='store_true',
@@ -444,8 +450,51 @@ def main():
         pickle.dump(clf, f)
     print(f"\nClassifier saved to {args.model_save_path}")
     
-    # Test on sample image
-    if args.test_image:
+    # Test on sample image or all images
+    if args.test_all_images and not args.use_remote_dataset:
+        # Run inference on all images in the images directory
+        print("\nRunning inference on all images in dataset...")
+        all_images_path = Path(args.images_dir)
+        all_image_files = sorted(list(all_images_path.glob('*.jpg')) + 
+                                list(all_images_path.glob('*.jpeg')) + 
+                                list(all_images_path.glob('*.JPG')) + 
+                                list(all_images_path.glob('*.JPEG')) +
+                                list(all_images_path.glob('*.png')) +
+                                list(all_images_path.glob('*.PNG')))
+        
+        # Create subdirectory for all results
+        all_results_dir = os.path.join(args.output_dir, 'all_results')
+        os.makedirs(all_results_dir, exist_ok=True)
+        
+        # Open CSV file if specified
+        csv_file = None
+        csv_writer = None
+        if args.csv_output:
+            csv_file = open(args.csv_output, 'w', newline='')
+            csv_writer = csv.writer(csv_file)
+            csv_writer.writerow(['image_path', 'mean_probability'])
+            print(f"Writing results to CSV: {args.csv_output}")
+        
+        try:
+            for img_file in tqdm(all_image_files, desc="Processing images"):
+                output_name = f'result_{img_file.stem}.png'
+                save_path = os.path.join(all_results_dir, output_name)
+                try:
+                    mean_prob, _ = test_classifier(clf, model, args.model, str(img_file), save_path=save_path)
+                    
+                    # Write to CSV if specified
+                    if csv_writer:
+                        csv_writer.writerow([str(img_file), f'{mean_prob:.6f}'])
+                except Exception as e:
+                    print(f"Error processing {img_file.name}: {e}")
+                    continue
+        finally:
+            if csv_file:
+                csv_file.close()
+                print(f"CSV saved to {args.csv_output}")
+        
+        print(f"\nSaved {len(all_image_files)} results to {all_results_dir}")
+    elif args.test_image:
         test_classifier(clf, model, args.model, args.test_image,
                        save_path=os.path.join(args.output_dir, 'test_result.png'))
     

@@ -3,7 +3,7 @@
 
 Goal - given an image taken from the street at night, possibly containing a house, possibly decorated with festive lights, provide a "festivity measure" in order to sort the most festive images from the least.
 
-Then take this model, drive around the neighbourhood continuously taking images, and automatically detect and rank the most festive houses.
+Then take this model, drive around the neighbourhood continuously taking images, and automatically detect and rank the most festive houses. Perhaps produce a map of the most festive areas in the neigbhborhood 📍🎅.
 
 <div style="display: flex; gap: 10px;">
     <img src="./doc/000000000004.jpg" alt="festive house" style="width: 49%;">
@@ -20,9 +20,10 @@ Previously I used [CLIP](https://openai.com/index/clip/) as a zero-shot classifi
 
 This worked OK to detect festive houses, but was not great at quantifying just how festive a display is compared to another.
 
-![bad clip rankings](./doc/Screenshot%20from%202025-11-23%2018-12-48.png)
-
-**Figure** A selection of festively decorated houses, ranked in terms of festivity using clip (top-left = most festive). Clip has done a good job of detecting the festive houses (note most images in the dataset do not contain decorated houses). However the ranking is questionable - some lower effort displays are ranked above more impressive ones.
+<figure>
+  <img src="./doc/Screenshot%20from%202025-11-23%2018-12-48.png" alt="Grid of festive houses with questionable CLIP rankings">
+  <figcaption>A selection of festively decorated houses, ranked in terms of festivity using clip (top-left = most festive). Clip has done a good job of detecting the festive houses (note most images in the dataset do not contain decorated houses). However the ranking is questionable - some lower effort displays are ranked above more impressive ones.</figcaption>
+</figure>
 
 Now it is 2025, dinov3 is out, I have a bit of time. Here I look at using dino patch embeddings to produce a dense fesitvity map, which I can agregate over the image to more acurately quantify festivity.
 
@@ -40,28 +41,35 @@ Train and test code is in [train_from_labelled_dataset.py](./train_from_labelled
 
 Here's what the dense output festivity map looks like for a few cases:
 
-![a festive house](./doc/result_IMG_20241204_184614.png)
-**Figure**: A festive scene, along with festivity map. 
-<br/>
+<figure>
+  <img src="./doc/result_IMG_20241204_184614.png" alt="A festive scene with festivity map">
+  <figcaption>A festive scene, along with festivity map.</figcaption>
+</figure>
 
-![a non-festive street light](./doc/result_IMG_20241204_184517.png)
-**Figure**: Street lights are not festive.
-<br/>
+<figure>
+  <img src="./doc/result_IMG_20241204_184517.png" alt="Street light with festivity map">
+  <figcaption>Street lights are not festive.</figcaption>
+</figure>
 
-![a non-festive security light](./doc/result_IMG_20241204_184647.png)
-**Figure**: Security lights are not festive.
-<br/>
+<figure>
+  <img src="./doc/result_IMG_20241204_184647.png" alt="Security light with festivity map">
+  <figcaption>Security lights are not festive.</figcaption>
+</figure>
 
-![a festive dinosaur](./doc/result_IMG_20241204_184531.png)
-**Figure**: Inflatable dinosaurs are festive with probabilty `p=1.0`
-<br/>
+<figure>
+  <img src="./doc/result_IMG_20241204_184531.png" alt="Inflatable dinosaur with festivity map">
+  <figcaption>Inflatable dinosaurs are festive with probabilty <code>p=1.0</code></figcaption>
+</figure>
 
-![festive palm trees](./doc/result_IMG_20241204_190237.png)
-**Figure**: The most festive image in the dataset, by mean per-pixel festivity.
+<figure>
+  <img src="./doc/result_IMG_20241204_190237.png" alt="Festive palm trees with festivity map">
+  <figcaption>The most festive image in the dataset, by mean per-pixel festivity.</figcaption>
+</figure>
 
-
-![sorted festive images](./doc/Screenshot%20from%202025-11-23%2018-12-44.png)
-**Figure**: a selection of images sorted by festivity (top left = most festive). In contrast to CLIP, the rankings are much more consistent/appropriate.
+<figure>
+  <img src="./doc/Screenshot%20from%202025-11-23%2018-12-44.png" alt="Grid of festive images sorted by festivity score">
+  <figcaption>A selection of images sorted by festivity (top left = most festive). In contrast to CLIP, the rankings are much more consistent/appropriate.</figcaption>
+</figure>
 
 Overall results are very promising, but with some potential areas to explore:
 * Close-up displays take up more pixels than those further away, so achieve higher festivity scores. Consider re-weighting with depth-anything estimates.
@@ -80,8 +88,10 @@ AFAIU, `dino.txt` adds a text encoder as well as some additional layers on the d
 
 Unfortunately this didn't work on my first attempt, so, limited on time, I decided to try the label based approach above. 
 
-![failed attempt](./doc/IMG_20241204_185627_similarity_combined.png)
-**Figure:** Input image and similarity map comparing patch embeddings to text embeddings for prompt "festive house decoration". Output doesn't appear at all correlated with festivity. 
+<figure>
+  <img src="./doc/IMG_20241204_185627_similarity_combined.png" alt="Input image and similarity map for dino.txt approach">
+  <figcaption>Input image and similarity map comparing patch embeddings to text embeddings for prompt "festive house decoration". Output doesn't appear at all correlated with festivity.</figcaption>
+</figure>
 
 I expect this is pure user-error, I just don't have time to debug 🤷.
 

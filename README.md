@@ -3,7 +3,7 @@
 
 Goal - given an image taken from the street at night, possibly containing a house, possibly decorated with festive lights, provide a "festivity measure" in order to sort the most festive images from the least.
 
-Then take this model, drive around the neighbourhood continuously taking images, and automatically detect and rank the most festive houses. Perhaps produce a map of the most festive areas in the neigbhborhood 📍🎅.
+Then take this model, drive around the neighbourhood continuously taking images, and automatically detect and rank the most festive houses. Perhaps produce a map of the most festive areas in the neighbourhood 📍🎅.
 
 <div style="display: flex; gap: 10px;">
     <img src="./doc/000000000004.jpg" alt="festive house" style="width: 49%;">
@@ -16,7 +16,7 @@ Ask [Dino](https://ai.meta.com/dinov3/)! 🦖🦖🦖
 
 ## Previous approach (2024): CLIP
 
-Previously I used [CLIP](https://openai.com/index/clip/) as a zero-shot classifier to derive per-image class probabilties for "festively lit house at night" vs "house at night". Then I used the festive class probability as the output metric.
+Previously I used [CLIP](https://openai.com/index/clip/) as a zero-shot classifier to derive per-image class probabilities for "festively lit house at night" vs "house at night". Then I used the festive class probability as the output metric.
 
 This worked OK to detect festive houses, but was not great at quantifying just how festive a display is compared to another.
 
@@ -25,7 +25,7 @@ This worked OK to detect festive houses, but was not great at quantifying just h
   <figcaption>A selection of festively decorated houses, ranked in terms of festivity using clip (top-left = most festive). Clip has done a good job of detecting the festive houses (note most images in the dataset do not contain decorated houses). However the ranking is questionable - some lower effort displays are ranked above more impressive ones.</figcaption>
 </figure>
 
-Now it is 2025, dinov3 is out, I have a bit of time. Here I look at using dino patch embeddings to produce a dense fesitvity map, which I can agregate over the image to more acurately quantify festivity.
+Now it is 2025, dinov3 is out, I have a bit of time. Here I look at using dino patch embeddings to produce a dense festivity map, which I can aggregate over the image to more accurately quantify festivity.
 
 ## New approach: DINOv3 segmentation
 
@@ -66,7 +66,7 @@ Here's what the dense output festivity map looks like for a few cases:
 
 <figure>
   <img src="./doc/result_IMG_20241204_184531.png" alt="Inflatable dinosaur with festivity map">
-  <figcaption>Inflatable dinosaurs are festive with probabilty <code>p=1.0</code></figcaption>
+  <figcaption>Inflatable dinosaurs are festive with probability <code>p=1.0</code></figcaption>
 </figure>
 
 ---
@@ -87,7 +87,7 @@ Here's what the dense output festivity map looks like for a few cases:
 
 Overall results are very promising, but with some potential areas to explore:
 * Close-up displays take up more pixels than those further away, so achieve higher festivity scores. Consider re-weighting with depth-anything estimates.
-* Should a bunch of decorated palm trees really win the "most festive" prize? How can we capture aspects of creativity, novelty, abilty to inspire awe, etc? Probably not with a per-pixel metric - try a VLM?
+* Should a bunch of decorated palm trees really win the "most festive" prize? How can we capture aspects of creativity, novelty, ability to inspire awe, etc? Probably not with a per-pixel metric - try a VLM?
 
 
 ## Failed approach: dino.txt

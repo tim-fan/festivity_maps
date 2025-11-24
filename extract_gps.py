@@ -9,12 +9,14 @@ on an interactive map.
 
 import argparse
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Dict
 from datetime import datetime
+import time
 from PIL import Image, ExifTags
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+import requests
 
 
 def get_lat_lon(image_path: Path) -> Optional[Tuple[float, float]]:
@@ -94,6 +96,34 @@ def get_timestamp(image_path: Path) -> Optional[datetime]:
         return None
 
 
+def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Calculate the distance between two GPS coordinates using the Haversine formula.
+    
+    Args:
+        lat1, lon1: First point coordinates (degrees)
+        lat2, lon2: Second point coordinates (degrees)
+        
+    Returns:
+        Distance in meters
+    """
+    # Earth's radius in meters
+    R = 6371000
+    
+    # Convert to radians
+    lat1_rad = np.radians(lat1)
+    lat2_rad = np.radians(lat2)
+    dlat = np.radians(lat2 - lat1)
+    dlon = np.radians(lon2 - lon1)
+    
+    # Haversine formula
+    a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+    distance = R * c
+    
+    return distance
+
+
 def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Calculate the bearing (heading) from point 1 to point 2.
@@ -163,12 +193,16 @@ def average_bearings(bearing1: Optional[float], bearing2: Optional[float]) -> Op
     return avg_bearing_deg
 
 
-def calculate_headings(df: pd.DataFrame) -> pd.DataFrame:
+def calculate_headings(df: pd.DataFrame, min_distance_m: float = 2.0) -> pd.DataFrame:
     """
     Calculate heading for each image based on vectors to previous and next images.
     
+    To reduce heading noise from GPS position errors when stationary, only uses
+    reference points that are at least min_distance_m away from the current point.
+    
     Args:
         df: DataFrame with lat, lon columns (must be sorted by timestamp)
+        min_distance_m: Minimum distance in meters to reference point for heading calculation
         
     Returns:
         DataFrame with added 'heading' column
@@ -179,21 +213,28 @@ def calculate_headings(df: pd.DataFrame) -> pd.DataFrame:
         bearing_from_prev = None
         bearing_to_next = None
         
-        # Calculate bearing from previous image to current
-        if idx > 0:
-            prev_lat = df.iloc[idx - 1]['lat']
-            prev_lon = df.iloc[idx - 1]['lon']
-            curr_lat = df.iloc[idx]['lat']
-            curr_lon = df.iloc[idx]['lon']
-            bearing_from_prev = calculate_bearing(prev_lat, prev_lon, curr_lat, curr_lon)
+        curr_lat = df.iloc[idx]['lat']
+        curr_lon = df.iloc[idx]['lon']
         
-        # Calculate bearing from current image to next
-        if idx < len(df) - 1:
-            curr_lat = df.iloc[idx]['lat']
-            curr_lon = df.iloc[idx]['lon']
-            next_lat = df.iloc[idx + 1]['lat']
-            next_lon = df.iloc[idx + 1]['lon']
-            bearing_to_next = calculate_bearing(curr_lat, curr_lon, next_lat, next_lon)
+        # Look backward to find a point at least min_distance_m away
+        for prev_idx in range(idx - 1, -1, -1):
+            prev_lat = df.iloc[prev_idx]['lat']
+            prev_lon = df.iloc[prev_idx]['lon']
+            distance = calculate_distance(prev_lat, prev_lon, curr_lat, curr_lon)
+            
+            if distance >= min_distance_m:
+                bearing_from_prev = calculate_bearing(prev_lat, prev_lon, curr_lat, curr_lon)
+                break
+        
+        # Look forward to find a point at least min_distance_m away
+        for next_idx in range(idx + 1, len(df)):
+            next_lat = df.iloc[next_idx]['lat']
+            next_lon = df.iloc[next_idx]['lon']
+            distance = calculate_distance(curr_lat, curr_lon, next_lat, next_lon)
+            
+            if distance >= min_distance_m:
+                bearing_to_next = calculate_bearing(curr_lat, curr_lon, next_lat, next_lon)
+                break
         
         # Average the two bearings
         avg_heading = average_bearings(bearing_from_prev, bearing_to_next)
@@ -279,7 +320,144 @@ def calculate_offset_points(df: pd.DataFrame, offset_distance_m: float) -> pd.Da
     return df
 
 
-def process_images(image_dir: Path, output_csv: Path, offset_distance_m: float = 10.0, verbose: bool = False):
+def fetch_osm_addresses(min_lat: float, max_lat: float, min_lon: float, max_lon: float) -> List[Dict]:
+    """
+    Fetch addresses from OpenStreetMap within the given bounding box.
+    
+    Uses the Overpass API to query for buildings and addresses.
+    
+    Args:
+        min_lat, max_lat: Latitude bounds
+        min_lon, max_lon: Longitude bounds
+        
+    Returns:
+        List of dictionaries with 'lat', 'lon', 'address' keys
+    """
+    overpass_url = "http://overpass-api.de/api/interpreter"
+    
+    # Overpass QL query for buildings with addresses
+    overpass_query = f"""
+    [out:json][timeout:60];
+    (
+      node["addr:housenumber"]({min_lat},{min_lon},{max_lat},{max_lon});
+      way["addr:housenumber"]({min_lat},{min_lon},{max_lat},{max_lon});
+    );
+    out center;
+    """
+    
+    print("Fetching addresses from OpenStreetMap...")
+    try:
+        response = requests.get(overpass_url, params={'data': overpass_query}, timeout=90)
+        response.raise_for_status()
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Error fetching OSM data: {e}"
+        print(error_msg)
+        raise RuntimeError(error_msg) from e
+    
+    addresses = []
+    
+    for element in data.get('elements', []):
+        # Get coordinates
+        if element['type'] == 'node':
+            lat = element['lat']
+            lon = element['lon']
+        elif 'center' in element:
+            lat = element['center']['lat']
+            lon = element['center']['lon']
+        else:
+            continue
+        
+        # Build address string
+        tags = element.get('tags', {})
+        addr_parts = []
+        
+        if 'addr:housenumber' in tags:
+            addr_parts.append(tags['addr:housenumber'])
+        if 'addr:street' in tags:
+            addr_parts.append(tags['addr:street'])
+        if 'addr:suburb' in tags:
+            addr_parts.append(tags['addr:suburb'])
+        if 'addr:city' in tags:
+            addr_parts.append(tags['addr:city'])
+        
+        if addr_parts:
+            address_str = ', '.join(addr_parts)
+            addresses.append({
+                'lat': lat,
+                'lon': lon,
+                'address': address_str
+            })
+    
+    print(f"Found {len(addresses)} addresses from OSM")
+    return addresses
+
+
+def match_addresses_to_points(df: pd.DataFrame, addresses: List[Dict], max_distance_m: float = 30.0) -> pd.DataFrame:
+    """
+    Match offset points to nearest addresses within max_distance_m.
+    
+    Args:
+        df: DataFrame with offset_lat, offset_lon columns
+        addresses: List of address dictionaries from OSM
+        max_distance_m: Maximum distance in meters to consider a match
+        
+    Returns:
+        DataFrame with added 'address', 'address_lat', 'address_lon' columns
+    """
+    if not addresses:
+        # No addresses available, use defaults
+        df['address'] = 'none'
+        df['address_lat'] = df['offset_lat']
+        df['address_lon'] = df['offset_lon']
+        return df
+    
+    # Convert addresses to numpy arrays for vectorized distance calculations
+    addr_lats = np.array([a['lat'] for a in addresses])
+    addr_lons = np.array([a['lon'] for a in addresses])
+    addr_strings = [a['address'] for a in addresses]
+    
+    matched_addresses = []
+    matched_lats = []
+    matched_lons = []
+    
+    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Matching addresses"):
+        if pd.isna(row['offset_lat']) or pd.isna(row['offset_lon']):
+            matched_addresses.append('none')
+            matched_lats.append(row['offset_lat'])
+            matched_lons.append(row['offset_lon'])
+            continue
+        
+        # Calculate distances to all addresses
+        distances = np.array([
+            calculate_distance(row['offset_lat'], row['offset_lon'], addr_lat, addr_lon)
+            for addr_lat, addr_lon in zip(addr_lats, addr_lons)
+        ])
+        
+        # Find closest address
+        min_idx = np.argmin(distances)
+        min_distance = distances[min_idx]
+        
+        if min_distance <= max_distance_m:
+            # Found a match
+            matched_addresses.append(addr_strings[min_idx])
+            matched_lats.append(addr_lats[min_idx])
+            matched_lons.append(addr_lons[min_idx])
+        else:
+            # No match within threshold
+            matched_addresses.append('none')
+            matched_lats.append(row['offset_lat'])
+            matched_lons.append(row['offset_lon'])
+    
+    df['address'] = matched_addresses
+    df['address_lat'] = matched_lats
+    df['address_lon'] = matched_lons
+    
+    return df
+
+
+def process_images(image_dir: Path, output_csv: Path, offset_distance_m: float = 10.0, 
+                   fetch_addresses: bool = False, verbose: bool = False):
     """
     Process all images in a directory and extract GPS coordinates.
     
@@ -287,6 +465,7 @@ def process_images(image_dir: Path, output_csv: Path, offset_distance_m: float =
         image_dir: Directory containing images
         output_csv: Path to output CSV file
         offset_distance_m: Distance in meters to offset points perpendicular to heading
+        fetch_addresses: Whether to fetch and match addresses from OSM
         verbose: Whether to print detailed progress
     """
     # Support common image extensions
@@ -347,6 +526,32 @@ def process_images(image_dir: Path, output_csv: Path, offset_distance_m: float =
         df['offset_lat'] = None
         df['offset_lon'] = None
     
+    # Fetch and match addresses if requested
+    if fetch_addresses and not df.empty:
+        # Get bounding box
+        min_lat = df['lat'].min()
+        max_lat = df['lat'].max()
+        min_lon = df['lon'].min()
+        max_lon = df['lon'].max()
+        
+        # Add some padding to bounding box (about 0.001 degrees ~= 100m)
+        padding = 0.001
+        min_lat -= padding
+        max_lat += padding
+        min_lon -= padding
+        max_lon += padding
+        
+        # Fetch addresses from OSM
+        addresses = fetch_osm_addresses(min_lat, max_lat, min_lon, max_lon)
+        
+        # Match addresses to offset points
+        df = match_addresses_to_points(df, addresses)
+    else:
+        # Add default address columns
+        df['address'] = 'none'
+        df['address_lat'] = df['offset_lat']
+        df['address_lon'] = df['offset_lon']
+    
     # Create output directory if it doesn't exist
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     
@@ -393,6 +598,7 @@ def visualize_on_map(csv_path: Path, output_html: Optional[Path] = None):
     # Create feature groups for different layers
     original_markers = folium.FeatureGroup(name='Original Points', show=True)
     offset_markers = folium.FeatureGroup(name='Offset Points', show=True)
+    address_markers = folium.FeatureGroup(name='Address Points', show=False)
     original_heatmap_layer = folium.FeatureGroup(name='Original Heatmap', show=False)
     offset_heatmap_layer = folium.FeatureGroup(name='Offset Heatmap', show=False)
     
@@ -424,6 +630,41 @@ def visualize_on_map(csv_path: Path, output_html: Optional[Path] = None):
                     fillOpacity=0.6
                 ).add_to(offset_markers)
     
+    # Add markers for matched address points (green)
+    if 'address_lat' in df.columns and 'address_lon' in df.columns and 'address' in df.columns:
+        # Only show addresses that are actually matched (not default offset points)
+        matched_addresses = {}
+        for idx, row in df.iterrows():
+            if (pd.notna(row['address_lat']) and pd.notna(row['address_lon']) and 
+                row.get('address', 'none') != 'none'):
+                # Use address location as key to avoid duplicate markers
+                addr_key = (round(row['address_lat'], 6), round(row['address_lon'], 6))
+                if addr_key not in matched_addresses:
+                    matched_addresses[addr_key] = {
+                        'lat': row['address_lat'],
+                        'lon': row['address_lon'],
+                        'address': row['address'],
+                        'images': []
+                    }
+                matched_addresses[addr_key]['images'].append(row['filename'])
+        
+        # Add markers for unique addresses
+        for addr_data in matched_addresses.values():
+            image_list = '<br>'.join(addr_data['images'][:5])  # Show first 5 images
+            if len(addr_data['images']) > 5:
+                image_list += f"<br>... and {len(addr_data['images']) - 5} more"
+            
+            folium.CircleMarker(
+                location=[addr_data['lat'], addr_data['lon']],
+                radius=6,
+                popup=f"<b>{addr_data['address']}</b><br><br>Images ({len(addr_data['images'])}):<br>{image_list}",
+                tooltip=addr_data['address'],
+                color='green',
+                fill=True,
+                fillColor='green',
+                fillOpacity=0.7
+            ).add_to(address_markers)
+    
     # Add heatmap for original points
     if len(df) > 2:
         heat_data_original = [[row["lat"], row["lon"]] for idx, row in df.iterrows()]
@@ -442,6 +683,7 @@ def visualize_on_map(csv_path: Path, output_html: Optional[Path] = None):
     # Add all feature groups to map
     original_markers.add_to(m)
     offset_markers.add_to(m)
+    address_markers.add_to(m)
     original_heatmap_layer.add_to(m)
     offset_heatmap_layer.add_to(m)
     
@@ -471,6 +713,9 @@ Examples:
   # Extract GPS with custom offset distance
   %(prog)s /path/to/images output.csv --offset 15.0
   
+  # Fetch and match addresses from OpenStreetMap
+  %(prog)s /path/to/images output.csv --fetch-addresses
+  
   # Extract GPS and view on map
   %(prog)s /path/to/images output.csv --view-map
   
@@ -488,7 +733,7 @@ Examples:
     parser.add_argument(
         "output_csv",
         type=Path,
-        help="Output CSV file path (format: filename, lat, lon, timestamp, heading, offset_lat, offset_lon)"
+        help="Output CSV file path (columns: filename, lat, lon, timestamp, heading, offset_lat, offset_lon, address, address_lat, address_lon)"
     )
     
     parser.add_argument(
@@ -496,6 +741,12 @@ Examples:
         type=float,
         default=-20.0,
         help="Distance in meters to offset points perpendicular to heading (default: -20.0). Positive = right side of heading."
+    )
+    
+    parser.add_argument(
+        "--fetch-addresses",
+        action="store_true",
+        help="Fetch addresses from OpenStreetMap and match to offset points (within 30m)"
     )
     
     parser.add_argument(
@@ -528,7 +779,7 @@ Examples:
         return 1
     
     # Process images
-    df = process_images(args.image_dir, args.output_csv, args.offset, args.verbose)
+    df = process_images(args.image_dir, args.output_csv, args.offset, args.fetch_addresses, args.verbose)
     
     # Optionally create map visualization
     if args.view_map and df is not None and not df.empty:

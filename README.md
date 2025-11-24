@@ -12,7 +12,7 @@ Then take this model, drive around the neighbourhood continuously taking images,
 
 Which house is more festive?
 
-Ask Dino! 🦖🦖🦖
+Ask [Dino](https://ai.meta.com/dinov3/)! 🦖🦖🦖
 
 ## Previous approach (2024): CLIP
 

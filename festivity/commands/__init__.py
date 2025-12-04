@@ -1,0 +1,3 @@
+"""
+Festivity commands package.
+"""

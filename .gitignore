@@ -10,3 +10,4 @@ wheels/
 .venv
 weights/
 dinov3/
+output/

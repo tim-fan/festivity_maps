@@ -1,9 +1,9 @@
 [project]
-name = "dino-features"
-version = "0.1.0"
-description = "Add your description here"
+name = "festivity-mapping"
+version = "1.0.0"
+description = "A tool for mapping festive decorations using DINOv3 features"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "fiftyone>=1.10.0",
     "folium>=0.20.0",
@@ -11,7 +11,14 @@ dependencies = [
     "matplotlib>=3.10.7",
     "opencv-python>=4.12.0.88",
     "pandas>=2.3.3",
+    "pillow>=9.0.0",
+    "pyyaml>=6.0.0",
+    "requests>=2.28.0",
+    "scikit-learn>=1.2.0",
     "torch<=2.7.1",
     "torchvision==0.22.1",
     "tqdm>=4.67.1",
 ]
+
+[project.scripts]
+festivity = "festivity.cli:main"

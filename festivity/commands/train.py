@@ -1,7 +1,7 @@
 """
 Train festivity classifier.
 
-Adapted from train_from_labelled_dataset.py
+Reference https://github.com/facebookresearch/dinov3/blob/main/notebooks/foreground_segmentation.ipynb
 """
 
 import argparse

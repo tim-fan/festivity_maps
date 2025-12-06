@@ -198,3 +198,28 @@ def get_database_path(workspace_path: Path) -> Path:
         Path to database file
     """
     return workspace_path / 'database.db'
+
+
+def get_workspace_images(workspace_path: Path) -> list[Path]:
+    """
+    Get all image files from the workspace images directory.
+    
+    Args:
+        workspace_path: Path to workspace directory
+        
+    Returns:
+        List of image file paths
+    """
+    images_dir = workspace_path / 'images'
+    
+    if not images_dir.exists():
+        return []
+    
+    # Common image extensions
+    image_extensions = {'.jpg', '.jpeg', '.JPG', '.JPEG', '.png', '.PNG'}
+    
+    images = []
+    for ext in image_extensions:
+        images.extend(images_dir.glob(f'*{ext}'))
+    
+    return sorted(images)

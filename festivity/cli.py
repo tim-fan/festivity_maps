@@ -20,7 +20,7 @@ def main():
     
     # Import command modules (lazy import to avoid circular dependencies)
     from festivity.commands import (
-        init, train, add_images, extract_gps, score, map_cmd, trajectory_stats, view
+        init, train, add_images, extract_gps, score, map_cmd, trajectory_stats, view, reset
     )
     
     # Register each command
@@ -32,6 +32,7 @@ def main():
     map_cmd.register_command(subparsers)
     trajectory_stats.register_command(subparsers)
     view.register_command(subparsers)
+    reset.register_command(subparsers)
     
     # Parse arguments
     args = parser.parse_args()

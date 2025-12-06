@@ -22,12 +22,6 @@ def register_command(subparsers):
         help='Workspace root path (or use FESTIVITY_WORKSPACE env var)'
     )
     
-    parser.add_argument(
-        '--sort-by-score',
-        action='store_true',
-        help='Sort images by festivity score (highest first)'
-    )
-    
     parser.set_defaults(func=execute)
 
 
@@ -43,7 +37,7 @@ def execute(args):
     conn = get_db_connection(workspace)
     cursor = conn.execute("""
         SELECT 
-            g.filename,
+            s.filename,
             g.is_left,
             g.lat,
             g.lon,
@@ -53,8 +47,8 @@ def execute(args):
             g.offset_lon,
             g.address,
             s.mean_probability
-        FROM gps_data g
-        INNER JOIN festivity_scores s ON g.filename = s.filename
+        FROM festivity_scores s
+        LEFT JOIN gps_data g ON s.filename = g.filename
         ORDER BY s.mean_probability DESC
     """)
     
@@ -74,7 +68,7 @@ def execute(args):
     # Delete existing dataset if it exists
     if dataset_name in fo.list_datasets():
         fo.delete_dataset(dataset_name)
-    
+        
     dataset = fo.Dataset(dataset_name, persistent=False)
     
     # Add samples
@@ -110,18 +104,29 @@ def execute(args):
     
     dataset.add_samples(samples)
     
+    # Create index on festivity_score so it appears in the sort dropdown
+    dataset.create_index("festivity_score")
+    
     print(f"\nDataset: {len(dataset)} images")
     print(f"  Festivity scores: {dataset.bounds('festivity_score')}")
     
-    # Create view sorted by score if requested
-    if args.sort_by_score:
-        view = dataset.sort_by('festivity_score', reverse=True)
-        print("\nSorted by festivity score (highest first)")
-    else:
-        view = dataset
+    # Sort by festivity score (highest first) by default
+    view = dataset.sort_by('festivity_score', reverse=True)
+    
+    # Configure default sidebar fields to show festivity_score
+    dataset.app_config.sidebar_mode = "all"
+    dataset.app_config.sidebar_groups = [
+        fo.SidebarGroupDocument(
+            name="labels",
+            expanded=True,
+            paths=["festivity_score", "festivity_heatmap"]
+        )
+    ]
+    dataset.save()
     
     print("\nLaunching FiftyOne App...")
-    print("  - Sort by 'festivity_score' to see most festive images")
+    print("  - Sorted by festivity score (highest first)")
+    print("  - Festivity score visible in sidebar by default")
     print("  - View 'festivity_heatmap' to see score heatmaps")
     print("  - Use Map view to see image locations")
     print("  - Press Ctrl+C to exit")

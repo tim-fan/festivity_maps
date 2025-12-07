@@ -119,7 +119,7 @@ def load_config(workspace_path: Path) -> Dict[str, Any]:
         sys.exit(1)
 
 
-def detect_image_side(filename: str, config: Dict[str, Any]) -> Optional[bool]:
+def detect_image_side(filename: str, config: Dict[str, Any]) -> bool:
     """
     Detect whether image is from left or right camera based on filename.
     
@@ -128,7 +128,10 @@ def detect_image_side(filename: str, config: Dict[str, Any]) -> Optional[bool]:
         config: Configuration dictionary with image_patterns
         
     Returns:
-        True if left camera, False if right camera, None if pattern not found
+        True if left camera, False if right camera
+        
+    Raises:
+        ValueError: If camera side cannot be determined from filename
     """
     left_pattern = config.get('image_patterns', {}).get('left_pattern', '_left')
     right_pattern = config.get('image_patterns', {}).get('right_pattern', '_right')
@@ -138,7 +141,11 @@ def detect_image_side(filename: str, config: Dict[str, Any]) -> Optional[bool]:
     elif right_pattern in filename:
         return False
     else:
-        return None
+        raise ValueError(
+            f"Cannot determine camera side for image '{filename}'. "
+            f"Filename must contain either '{left_pattern}' or '{right_pattern}'. "
+            f"Check your config.yaml image_patterns settings."
+        )
 
 
 def resolve_path(path: str, workspace_root: Path, make_relative: bool = True) -> str:

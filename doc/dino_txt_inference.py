@@ -3,6 +3,8 @@
 # based on
 #  https://visionbrick.com/introduction-to-dinov3-generating-similarity-maps-with-vision-transformers/
 #  https://github.com/facebookresearch/dinov3/blob/main/notebooks/dinotxt_segmentation_inference.ipynb
+# 
+# Never got it working properly, saved here under doc/ for future debugging
 
 import dataclasses
 import math

@@ -1,4 +1,9 @@
-"""Score images with festivity model."""
+"""
+Score images with festivity model.
+
+Reference https://github.com/facebookresearch/dinov3/blob/main/notebooks/foreground_segmentation.ipynb
+"""
+
 import sys
 import pickle
 from pathlib import Path
@@ -14,6 +19,7 @@ matplotlib.use('Agg')  # Non-interactive backend for server environments
 
 from festivity.utils import get_workspace_path, ensure_workspace_initialized, load_config, get_model_path, resolve_path, get_workspace_images
 from festivity.db import get_db_connection, insert_festivity_scores
+from festivity.commands.train import resize_transform  # TODO dont import from command
 
 
 # ImageNet normalization constants
@@ -56,21 +62,6 @@ def register_command(subparsers):
     )
     parser.set_defaults(func=execute)
 
-
-from festivity.commands.train import resize_transform
-
-# def resize_transform_deprecated(img: Image.Image, target_size: int = 768) -> torch.Tensor:
-#     """Resize image maintaining aspect ratio, then convert to tensor."""
-#     w, h = img.size
-#     if w < h:
-#         new_w = target_size
-#         new_h = int(target_size * h / w)
-#     else:
-#         new_h = target_size
-#         new_w = int(target_size * w / h)
-    
-#     img_resized = img.resize((new_w, new_h), Image.BICUBIC)
-#     return T.ToTensor()(img_resized)
 
 
 def extract_features_for_image(model, img_tensor: torch.Tensor, model_name: str, device: str) -> tuple[torch.Tensor, tuple[int, int]]:

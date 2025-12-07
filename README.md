@@ -37,6 +37,11 @@ I used [GIMP](https://www.gimp.org/) to draw the masks (labelling instructions [
 
 Train and test code is in [train_from_labelled_dataset.py](./train_from_labelled_dataset.py).
 
+
+## Workflow / Usage
+
+A copilot-generated CLI has been built to handle processing of images to create maps. See [`usage.md`](doc/usage.md) for instructions.
+
 ## Results
 
 Here's what the dense output festivity map looks like for a few cases:
@@ -108,6 +113,8 @@ Unfortunately this didn't work on my first attempt, so, limited on time, I decid
 </figure>
 
 I expect this is pure user-error, I just don't have time to debug 🤷.
+
+Script is saved under [doc/dino_txt_inference.py](doc/dino_txt_inference.py) for future debugging.
 
 ## Other quick failed experiments
 

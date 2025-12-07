@@ -373,13 +373,21 @@ def execute(args):
     
     # Calculate offset points
     print("Calculating offset points...")
-    offset_distance = config.get('camera_offset_distance_m', 10.0)
+    # Support both old and new config formats for backward compatibility
+    offset_distance_left = config.get('offset_distance_left_m', 
+                                      config.get('camera_offset_distance_m', 
+                                                config.get('offset_distance_m', 30.0)))
+    offset_distance_right = config.get('offset_distance_right_m',
+                                       config.get('camera_offset_distance_m',
+                                                 config.get('offset_distance_m', 20.0)))
     
     offset_lats = []
     offset_lons = []
     
     for idx, row in df.iterrows():
         if pd.notna(row['heading']) and row['is_left'] is not None:
+            # Use appropriate offset distance based on camera side
+            offset_distance = offset_distance_left if row['is_left'] else offset_distance_right
             offset_lat, offset_lon = offset_point(
                 row['lat'], row['lon'], row['heading'], offset_distance, row['is_left']
             )
@@ -473,7 +481,10 @@ def execute(args):
     
     if not args.skip_address_fetch:
         matched_count = df['address'].notna().sum() if 'address' in df.columns else 0
+        # Count unique addresses (excluding None, 'none', and empty strings)
+        unique_addresses = df[df['address'].notna() & (df['address'] != 'none') & (df['address'] != '')]['address'].nunique()
         print(f"  Addresses matched: {matched_count}")
+        print(f"  Unique addresses: {unique_addresses}")
     
     print(f"\nNext step:")
     print(f"  festivity score --workspace {workspace}")

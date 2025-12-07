@@ -49,7 +49,8 @@ def create_default_config(dinov3_repo: Path) -> dict:
             'repo_path': str(dinov3_repo)
         },
         'gps': {
-            'offset_distance_m': 20.0,
+            'offset_distance_left_m': 30.0,
+            'offset_distance_right_m': 20.0,
             'min_heading_distance_m': 2.0,
             'address_match_distance_m': 30.0
         },

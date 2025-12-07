@@ -2,8 +2,11 @@
 from pathlib import Path
 import pandas as pd
 import folium
+import shutil
+from PIL import Image
 from festivity.utils import get_workspace_path, ensure_workspace_initialized
 from festivity.db import get_db_connection
+from festivity.trajectory import calculate_trajectory_stats, format_duration, format_distance
 
 
 def register_command(subparsers):
@@ -34,6 +37,17 @@ def register_command(subparsers):
         default=200,
         help='Width of thumbnail images in pixels (default: 200)'
     )
+    parser.add_argument(
+        '--show-addresses',
+        action='store_true',
+        help='Show street addresses on map and in tooltips (default: hidden)'
+    )
+    parser.add_argument(
+        '--deploy',
+        type=str,
+        metavar='DIR',
+        help='Create a self-contained deployment directory with HTML and images (for uploading to Netlify, etc.)'
+    )
     parser.set_defaults(func=execute)
 
 
@@ -42,8 +56,25 @@ def execute(args):
     workspace = get_workspace_path(args)
     ensure_workspace_initialized(workspace)
     
-    # Set output path
-    if args.output:
+    # Handle deployment mode
+    deploy_dir = None
+    if args.deploy:
+        deploy_dir = Path(args.deploy).expanduser().resolve()
+        
+        # Check if directory exists and is non-empty
+        if deploy_dir.exists():
+            if any(deploy_dir.iterdir()):
+                print(f"Error: Deploy directory '{deploy_dir}' exists and is not empty.")
+                print("Please specify an empty directory or delete the existing contents.")
+                return 1
+        else:
+            # Create the directory
+            deploy_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Created deploy directory: {deploy_dir}")
+        
+        # Set output to deploy directory
+        output_path = deploy_dir / 'festivity_map.html'
+    elif args.output:
         output_path = Path(args.output).expanduser().resolve()
     else:
         outputs_dir = workspace / 'outputs'
@@ -127,10 +158,25 @@ def execute(args):
     print("\nCreating map...")
     
     # Use address lat/lon for centering
+    # Create the map centered on data
     center_lat = df['address_lat'].mean()
     center_lon = df['address_lon'].mean()
     
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=14)
+    # Use minimal style when addresses are hidden, default OSM when showing addresses
+    if args.show_addresses:
+        m = folium.Map(location=[center_lat, center_lon])
+    else:
+        # Use CartoDB Positron for a minimal style without street labels
+        m = folium.Map(
+            location=[center_lat, center_lon],
+            tiles='CartoDB positron',
+            attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        )
+    
+    # Calculate bounds for zoom-to-extents
+    sw = [df['address_lat'].min(), df['address_lon'].min()]
+    ne = [df['address_lat'].max(), df['address_lon'].max()]
+    m.fit_bounds([sw, ne], padding=[30, 30])  # 30px padding
     
     # Add camera trajectory tracks (left and right)
     print("Adding camera trajectories...")
@@ -225,6 +271,9 @@ def execute(args):
     print("Grouping photos by address...")
     address_groups = df.groupby(['address', 'address_lat', 'address_lon'])
     
+    # Track images used in tooltips for deployment
+    used_images = set()
+    
     for (address, lat, lon), group in address_groups:
         # Determine the highest festivity class at this address
         class_priority = {'high_festive': 4, 'medium_festive': 3, 'low_festive': 2, 'not_festive': 1}
@@ -240,43 +289,37 @@ def execute(args):
         
         # Create tooltip with image
         img_filename = best_image_row['filename']
-        tooltip_html = f"""
-        <div style="text-align: center;">
-            <img src="../images/{img_filename}" width="{args.image_width}px"><br>
-            <b>{address}</b><br>
-            {photo_count} photo{"s" if photo_count > 1 else ""} - {dominant_class.replace('_', ' ').title()}
-        </div>
-        """
+        used_images.add(img_filename)  # Track this image for deployment
+        
+        # Image path depends on deployment mode
+        if deploy_dir:
+            img_path = f"images/{img_filename}"
+        else:
+            img_path = f"../images/{img_filename}"
+        
+        if args.show_addresses:
+            tooltip_html = f"""
+            <div style="text-align: center;">
+                <img src="{img_path}" width="{args.image_width}px"><br>
+                <b>{address}</b><br>
+                {photo_count} photo{"s" if photo_count > 1 else ""} - {dominant_class.replace('_', ' ').title()}<br>
+                Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
+            </div>
+            """
+        else:
+            tooltip_html = f"""
+            <div style="text-align: center;">
+                <img src="{img_path}" width="{args.image_width}px"><br>
+                {photo_count} photo{"s" if photo_count > 1 else ""} - {dominant_class.replace('_', ' ').title()}<br>
+                Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
+            </div>
+            """
         tooltip = folium.Tooltip(tooltip_html)
-        
-        # Create popup text
-        popup_html = f"""
-        <b>{address}</b><br>
-        <br>
-        Class: <b>{dominant_class.replace('_', ' ').title()}</b><br>
-        Photos: {photo_count}<br>
-        Avg probability: {mean_prob:.4f}<br>
-        Max probability: {max_prob:.4f}<br>
-        <br>
-        <details>
-        <summary>Photos ({photo_count})</summary>
-        <ul style="margin: 5px 0; padding-left: 20px;">
-        """
-        
-        for _, row in group.iterrows():
-            side = "left" if row['is_left'] else "right"
-            popup_html += f"<li>{row['filename']} ({side}): {row['mean_probability']:.4f} ({row['festivity_class']})</li>"
-        
-        popup_html += """
-        </ul>
-        </details>
-        """
         
         # Add marker to the appropriate feature group
         folium.CircleMarker(
             location=[lat, lon],
             radius=8,
-            popup=folium.Popup(popup_html, max_width=300),
             tooltip=tooltip,
             color=color_map[dominant_class],
             fill=True,
@@ -289,31 +332,81 @@ def execute(args):
     for fg in feature_groups.values():
         fg.add_to(m)
     
-    # Add layer control
-    folium.LayerControl(collapsed=False).add_to(m)
+    # Add layer control (collapsed for mobile-friendly display)
+    folium.LayerControl(collapsed=True).add_to(m)
     
-    # Add legend
-    legend_html = '''
+    # Add trajectory statistics info box
+    print("Adding trajectory statistics...")
+    db_path = workspace / 'database.db'
+    traj_stats = calculate_trajectory_stats(db_path)
+    
+    stats_html = f'''
     <div style="position: fixed; 
-                bottom: 50px; right: 50px; width: 200px; height: auto; 
-                background-color: white; border:2px solid grey; z-index:9999; 
-                font-size:14px; padding: 10px">
-    <p style="margin: 0 0 10px 0; font-weight: bold;">Festivity Classification</p>
-    <p style="margin: 5px 0;"><i class="fa fa-circle" style="color:gray"></i> Not Festive (< {threshold})</p>
-    <p style="margin: 5px 0;"><i class="fa fa-circle" style="color:darkred"></i> Low Festive</p>
-    <p style="margin: 5px 0;"><i class="fa fa-circle" style="color:orange"></i> Medium Festive</p>
-    <p style="margin: 5px 0;"><i class="fa fa-circle" style="color:yellow"></i> High Festive</p>
+                top: 10px; left: 60px; 
+                background-color: white; 
+                border: 2px solid rgba(0,0,0,0.2);
+                border-radius: 4px;
+                padding: 10px;
+                font-family: Arial, sans-serif;
+                font-size: 12px;
+                z-index: 1000;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);">
+        <div style="font-weight: bold; margin-bottom: 5px; font-size: 13px;">Trajectory Stats</div>
+        <div><b>{traj_stats['total_images']:,}</b> images</div>
+        <div><b>{format_distance(traj_stats['total_distance_m'])}</b> distance</div>
+        <div><b>{format_duration(traj_stats['total_duration_seconds'])}</b> duration</div>
     </div>
-    '''.format(threshold=args.threshold)
+    '''
     
-    m.get_root().html.add_child(folium.Element(legend_html))
+    m.get_root().html.add_child(folium.Element(stats_html))
     
     # Save the map
     m.save(str(output_path))
     print(f"\n✓ Map saved to {output_path}")
-    print(f"\n  To view the map with image tooltips, start a web server:")
-    print(f"    cd {workspace}")
-    print(f"    python3 -m http.server 8000")
-    print(f"  Then open: http://localhost:8000/outputs/{output_path.name}")
+    
+    # Copy images for deployment
+    if deploy_dir:
+        images_dir = deploy_dir / 'images'
+        images_dir.mkdir(exist_ok=True)
+        
+        print(f"\nResizing and copying {len(used_images)} images to deployment directory...")
+        workspace_images_dir = workspace / 'images'
+        
+        # Resize images to save bandwidth (max width based on tooltip setting)
+        max_width = args.image_width * 2  # 2x for retina displays
+        
+        for img_filename in used_images:
+            src = workspace_images_dir / img_filename
+            dst = images_dir / img_filename
+            if src.exists():
+                try:
+                    # Open and resize image
+                    with Image.open(src) as img:
+                        # Calculate new size maintaining aspect ratio
+                        if img.width > max_width:
+                            ratio = max_width / img.width
+                            new_size = (max_width, int(img.height * ratio))
+                            img_resized = img.resize(new_size, Image.Resampling.LANCZOS)
+                            # Save with optimization
+                            img_resized.save(dst, quality=85, optimize=True)
+                        else:
+                            # Image is already small enough, just copy
+                            shutil.copy2(src, dst)
+                except Exception as e:
+                    print(f"Warning: Failed to resize {img_filename}: {e}")
+                    # Fall back to direct copy
+                    shutil.copy2(src, dst)
+            else:
+                print(f"Warning: Image not found: {src}")
+        
+        print(f"\n✓ Deployment package created in {deploy_dir}")
+        print(f"  - festivity_map.html")
+        print(f"  - images/ ({len(used_images)} files, resized to max {max_width}px width)")
+        print(f"\n  You can now upload this directory to Netlify or any static hosting service.")
+    else:
+        print(f"\n  To view the map with image tooltips, start a web server:")
+        print(f"    cd {workspace}")
+        print(f"    python3 -m http.server 8000")
+        print(f"  Then open: http://localhost:8000/outputs/{output_path.name}")
     
     return 0

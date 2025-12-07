@@ -63,6 +63,14 @@ def calculate_trajectory_stats(db_path: Path, gap_threshold_seconds: float = 10.
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
     
+    # Get count of unique addresses
+    cursor.execute("""
+        SELECT COUNT(DISTINCT address)
+        FROM gps_data
+        WHERE address IS NOT NULL AND address != 'none' AND address != ''
+    """)
+    unique_addresses = cursor.fetchone()[0]
+    
     # Get GPS data for left camera
     cursor.execute("""
         SELECT filename, lat, lon, timestamp
@@ -91,6 +99,7 @@ def calculate_trajectory_stats(db_path: Path, gap_threshold_seconds: float = 10.
             'total_distance_m': 0.0,
             'total_duration_seconds': 0.0,
             'num_sub_trajectories': 0,
+            'unique_addresses': 0,
             'left_distance_m': 0.0,
             'right_distance_m': 0.0,
             'sub_trajectories': []
@@ -119,6 +128,7 @@ def calculate_trajectory_stats(db_path: Path, gap_threshold_seconds: float = 10.
         'total_distance_m': total_distance,
         'total_duration_seconds': total_duration,
         'num_sub_trajectories': len(merged_subs),
+        'unique_addresses': unique_addresses,
         'sub_trajectories': merged_subs
     }
 

@@ -62,6 +62,8 @@ def execute(args):
         avg_speed = stats['total_distance_m'] / stats['total_duration_seconds']
         print(f"Average speed:       {format_speed(avg_speed)}")
     
+    print(f"Unique addresses:    {stats['unique_addresses']:,}")
+    
     if stats['num_sub_trajectories'] > 1:
         print(f"Sub-trajectories:    {stats['num_sub_trajectories']}")
     

@@ -2,11 +2,12 @@
 from pathlib import Path
 import pandas as pd
 import folium
+from folium.plugins import LocateControl
 import shutil
 from PIL import Image
 from festivity.utils import get_workspace_path, ensure_workspace_initialized
 from festivity.db import get_db_connection
-from festivity.trajectory import calculate_trajectory_stats, format_duration, format_distance
+from festivity.trajectory import calculate_trajectory_stats, format_duration, format_distance, format_speed
 
 
 def register_command(subparsers):
@@ -119,12 +120,12 @@ def execute(args):
     # Classify festivity levels
     print(f"\nClassifying festivity levels (threshold={args.threshold})...")
     
-    # First, separate not_festive (below threshold)
-    not_festive_mask = df['mean_probability'] < args.threshold
-    df['festivity_class'] = 'not_festive'
+    # First, separate no_lights (below threshold)
+    no_lights_mask = df['mean_probability'] < args.threshold
+    df['festivity_class'] = 'no_lights'
     
     # For the remaining photos, split into three equal groups
-    festive_df = df[~not_festive_mask].copy()
+    festive_df = df[~no_lights_mask].copy()
     
     if len(festive_df) > 0:
         # Sort by mean_probability and split into thirds
@@ -140,14 +141,19 @@ def execute(args):
         medium_indices = festive_df.index[low_end:medium_end]
         high_indices = festive_df.index[medium_end:]
         
-        df.loc[low_indices, 'festivity_class'] = 'low_festive'
-        df.loc[medium_indices, 'festivity_class'] = 'medium_festive'
-        df.loc[high_indices, 'festivity_class'] = 'high_festive'
+        df.loc[low_indices, 'festivity_class'] = 'some_lights'
+        df.loc[medium_indices, 'festivity_class'] = 'moderate_lights'
+        df.loc[high_indices, 'festivity_class'] = 'many_lights'
     
     # Print classification summary
     print("\nFestivity classification summary:")
-    for cls in ['not_festive', 'low_festive', 'medium_festive', 'high_festive']:
+    for cls in ['no_lights', 'some_lights', 'moderate_lights', 'many_lights']:
         count = (df['festivity_class'] == cls).sum()
+        if count > 0:
+            probs = df[df['festivity_class'] == cls]['mean_probability']
+            print(f"  {cls.replace('_', ' ')}: {count} photos (probability range: {probs.min():.6f} - {probs.max():.6f})")
+        else:
+            print(f"  {cls.replace('_', ' ')}: 0 photos")
         if count > 0:
             probs = df[df['festivity_class'] == cls]['mean_probability']
             print(f"  {cls}: {count} photos (probability range: {probs.min():.6f} - {probs.max():.6f})")
@@ -177,6 +183,9 @@ def execute(args):
     sw = [df['address_lat'].min(), df['address_lon'].min()]
     ne = [df['address_lat'].max(), df['address_lon'].max()]
     m.fit_bounds([sw, ne], padding=[30, 30])  # 30px padding
+    
+    # Add user location control (shows GPS location)
+    LocateControl(auto_start=False).add_to(m)
     
     # Add camera trajectory tracks (left and right)
     print("Adding camera trajectories...")
@@ -255,17 +264,25 @@ def execute(args):
     
     # Define colors for each festivity class
     color_map = {
-        'not_festive': 'gray',
-        'low_festive': 'darkred',
-        'medium_festive': 'orange',
-        'high_festive': 'yellow'
+        'no_lights': 'gray',
+        'some_lights': 'darkred',
+        'moderate_lights': 'orange',
+        'many_lights': 'yellow'
+    }
+    
+    # Display names for categories
+    display_names = {
+        'no_lights': 'No Lights Detected',
+        'some_lights': 'Some Lights Detected',
+        'moderate_lights': 'Moderate Lights Detected',
+        'many_lights': 'Many Lights Detected'
     }
     
     # Create feature groups for each festivity class
     feature_groups = {}
-    for cls in ['not_festive', 'low_festive', 'medium_festive', 'high_festive']:
-        show = cls != 'not_festive'  # Hide not_festive by default
-        feature_groups[cls] = folium.FeatureGroup(name=cls.replace('_', ' ').title(), show=show)
+    for cls in ['no_lights', 'some_lights', 'moderate_lights', 'many_lights']:
+        show = cls != 'no_lights'  # Hide no_lights by default
+        feature_groups[cls] = folium.FeatureGroup(name=display_names[cls], show=show)
     
     # Group by address to avoid duplicate markers
     print("Grouping photos by address...")
@@ -276,7 +293,7 @@ def execute(args):
     
     for (address, lat, lon), group in address_groups:
         # Determine the highest festivity class at this address
-        class_priority = {'high_festive': 4, 'medium_festive': 3, 'low_festive': 2, 'not_festive': 1}
+        class_priority = {'many_lights': 4, 'moderate_lights': 3, 'some_lights': 2, 'no_lights': 1}
         dominant_class = group.loc[group['festivity_class'].map(class_priority).idxmax(), 'festivity_class']
         
         # Get the highest probability image for the tooltip
@@ -302,7 +319,7 @@ def execute(args):
             <div style="text-align: center;">
                 <img src="{img_path}" width="{args.image_width}px"><br>
                 <b>{address}</b><br>
-                {photo_count} photo{"s" if photo_count > 1 else ""} - {dominant_class.replace('_', ' ').title()}<br>
+                {photo_count} photo{"s" if photo_count > 1 else ""} - {display_names[dominant_class]}<br>
                 Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
             </div>
             """
@@ -310,7 +327,7 @@ def execute(args):
             tooltip_html = f"""
             <div style="text-align: center;">
                 <img src="{img_path}" width="{args.image_width}px"><br>
-                {photo_count} photo{"s" if photo_count > 1 else ""} - {dominant_class.replace('_', ' ').title()}<br>
+                {photo_count} photo{"s" if photo_count > 1 else ""} - {display_names[dominant_class]}<br>
                 Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
             </div>
             """
@@ -332,30 +349,66 @@ def execute(args):
     for fg in feature_groups.values():
         fg.add_to(m)
     
-    # Add layer control (collapsed for mobile-friendly display)
+    # Add layer control (collapsed by default)
     folium.LayerControl(collapsed=True).add_to(m)
     
-    # Add trajectory statistics info box
-    print("Adding trajectory statistics...")
+    # Calculate trajectory statistics
+    print("Calculating trajectory statistics...")
     db_path = workspace / 'database.db'
     traj_stats = calculate_trajectory_stats(db_path)
     
+    # Calculate average speed if duration > 0
+    avg_speed_html = ""
+    if traj_stats['total_duration_seconds'] > 0:
+        avg_speed = traj_stats['total_distance_m'] / traj_stats['total_duration_seconds']
+        avg_speed_html = f"<div style='margin-top: 3px;'><b>{format_speed(avg_speed)}</b> avg speed</div>"
+    
+    # Add trajectory statistics as a collapsible control box in lower left
     stats_html = f'''
-    <div style="position: fixed; 
-                top: 10px; left: 60px; 
+    <div id="trajectory-stats-control" style="position: fixed; 
+                bottom: 30px; left: 10px; 
                 background-color: white; 
                 border: 2px solid rgba(0,0,0,0.2);
                 border-radius: 4px;
-                padding: 10px;
                 font-family: Arial, sans-serif;
                 font-size: 12px;
                 z-index: 1000;
-                box-shadow: 0 1px 5px rgba(0,0,0,0.4);">
-        <div style="font-weight: bold; margin-bottom: 5px; font-size: 13px;">Trajectory Stats</div>
-        <div><b>{traj_stats['total_images']:,}</b> images</div>
-        <div><b>{format_distance(traj_stats['total_distance_m'])}</b> distance</div>
-        <div><b>{format_duration(traj_stats['total_duration_seconds'])}</b> duration</div>
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+                cursor: pointer;">
+        <div id="stats-header" style="padding: 6px 10px; 
+                    background-color: white; 
+                    border-radius: 4px;
+                    font-weight: bold;">
+            <span id="stats-toggle">▶</span> Trajectory Stats
+        </div>
+        <div id="stats-content" style="display: none; 
+                    padding: 8px 10px; 
+                    border-top: 1px solid rgba(0,0,0,0.2);">
+            <div style='margin-top: 3px;'><b>{traj_stats['total_images']:,}</b> images</div>
+            <div style='margin-top: 3px;'><b>{format_distance(traj_stats['total_distance_m'])}</b> distance</div>
+            <div style='margin-top: 3px;'><b>{format_duration(traj_stats['total_duration_seconds'])}</b> duration</div>
+            {avg_speed_html}
+            <div style='margin-top: 3px;'><b>{traj_stats['unique_addresses']:,}</b> unique addresses</div>
+            <div style='margin-top: 8px; padding-top: 5px; border-top: 1px solid rgba(0,0,0,0.1); font-size: 10px;'>
+                <a href="https://github.com/tim-fan/festivity_maps" target="_blank" style="color: #0066cc; text-decoration: none;">
+                    🔗 github.com/tim-fan/festivity_maps
+                </a>
+            </div>
+        </div>
     </div>
+    <script>
+        document.getElementById('trajectory-stats-control').addEventListener('click', function(e) {{
+            var content = document.getElementById('stats-content');
+            var toggle = document.getElementById('stats-toggle');
+            if (content.style.display === 'none') {{
+                content.style.display = 'block';
+                toggle.textContent = '▼';
+            }} else {{
+                content.style.display = 'none';
+                toggle.textContent = '▶';
+            }}
+        }});
+    </script>
     '''
     
     m.get_root().html.add_child(folium.Element(stats_html))

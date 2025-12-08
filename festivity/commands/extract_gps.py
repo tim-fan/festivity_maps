@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import requests
+from scipy.spatial import cKDTree
 
 from festivity.utils import get_workspace_path, ensure_workspace_initialized, load_config, detect_image_side
 from festivity.db import get_db_connection, insert_gps_data, get_filenames_in_gps_data
@@ -272,8 +273,57 @@ def fetch_osm_addresses(min_lat: float, max_lat: float, min_lon: float, max_lon:
     return addresses
 
 
+def build_address_kdtree(addresses: List[Dict]) -> Tuple[cKDTree, List[Dict]]:
+    """Build a KD-tree for fast spatial lookup of addresses.
+    
+    Returns:
+        Tuple of (KD-tree, addresses list)
+    """
+    if not addresses:
+        return None, []
+    
+    # Extract coordinates for KD-tree (in lat, lon order)
+    coords = np.array([[addr['lat'], addr['lon']] for addr in addresses])
+    tree = cKDTree(coords)
+    return tree, addresses
+
+
+def match_address_kdtree(offset_lat: float, offset_lon: float, tree: cKDTree, addresses: List[Dict], max_distance_m: float = 30.0) -> Optional[Dict]:
+    """Match an offset point to the nearest address using KD-tree for speed.
+    
+    Note: This uses Euclidean distance in degrees, which is an approximation.
+    For the small distances we're searching (30m), this is acceptable.
+    """
+    if tree is None or not addresses:
+        return None
+    
+    # Convert max distance from meters to approximate degrees
+    # At equator: 1 degree latitude ≈ 111,320 meters
+    # This is an approximation but fine for our use case
+    max_distance_deg = max_distance_m / 111320.0
+    
+    # Query the tree for nearest neighbor
+    distance, idx = tree.query([offset_lat, offset_lon], distance_upper_bound=max_distance_deg)
+    
+    # Check if we found a valid match
+    if idx == len(addresses) or distance == np.inf:
+        return None
+    
+    # Verify with actual haversine distance
+    best_addr = addresses[idx]
+    actual_distance = calculate_distance(offset_lat, offset_lon, best_addr['lat'], best_addr['lon'])
+    
+    if actual_distance <= max_distance_m:
+        return best_addr
+    
+    return None
+
+
 def match_address(offset_lat: float, offset_lon: float, addresses: List[Dict], max_distance_m: float = 30.0) -> Optional[Dict]:
-    """Match an offset point to the nearest address within max_distance_m."""
+    """Match an offset point to the nearest address within max_distance_m.
+    
+    DEPRECATED: Use match_address_kdtree for better performance with large address lists.
+    """
     if not addresses:
         return None
     
@@ -409,11 +459,15 @@ def execute(args):
         
         addresses = fetch_osm_addresses(min_lat, max_lat, min_lon, max_lon)
         
+        # Build KD-tree for fast address matching
+        print("Building spatial index for addresses...")
+        tree, addresses = build_address_kdtree(addresses)
+        
         print("Matching addresses...")
         matched_data = []
         for idx, row in tqdm(df.iterrows(), total=len(df), desc="Matching addresses"):
             if pd.notna(row['offset_lat']):
-                match = match_address(row['offset_lat'], row['offset_lon'], addresses)
+                match = match_address_kdtree(row['offset_lat'], row['offset_lon'], tree, addresses)
                 if match:
                     matched_data.append({
                         'address': match['address'],

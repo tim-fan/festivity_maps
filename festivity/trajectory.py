@@ -33,7 +33,7 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return R * c
 
 
-def calculate_trajectory_stats(db_path: Path, gap_threshold_seconds: float = 10.0, min_distance_m: float = 2.0) -> Dict:
+def calculate_trajectory_stats(db_path: Path, gap_threshold_seconds: float = 1800.0, min_distance_m: float = 2.0) -> Dict:
     """
     Calculate trajectory statistics from GPS data.
     
@@ -46,7 +46,7 @@ def calculate_trajectory_stats(db_path: Path, gap_threshold_seconds: float = 10.
     Args:
         db_path: Path to database file
         gap_threshold_seconds: Maximum gap between consecutive images before
-                              treating as a new sub-trajectory (default: 10 seconds)
+                              treating as a new sub-trajectory (default: 1800 seconds / 30 minutes)
         min_distance_m: Minimum distance between consecutive points to count
                        toward trajectory length (default: 2.0 meters)
     

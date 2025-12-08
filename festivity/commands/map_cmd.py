@@ -99,6 +99,7 @@ def execute(args):
         g.address,
         g.address_lat,
         g.address_lon,
+        g.timestamp,
         s.mean_probability
     FROM gps_data g
     INNER JOIN festivity_scores s ON g.filename = s.filename
@@ -304,6 +305,16 @@ def execute(args):
         mean_prob = group['mean_probability'].mean()
         max_prob = group['mean_probability'].max()
         
+        # Format timestamp for display
+        timestamp_str = ""
+        if pd.notna(best_image_row.get('timestamp')):
+            try:
+                from datetime import datetime
+                ts = pd.to_datetime(best_image_row['timestamp'])
+                timestamp_str = f"<br>{ts.strftime('%Y-%m-%d %H:%M:%S')}"
+            except:
+                pass
+        
         # Create tooltip with image
         img_filename = best_image_row['filename']
         used_images.add(img_filename)  # Track this image for deployment
@@ -318,7 +329,7 @@ def execute(args):
             tooltip_html = f"""
             <div style="text-align: center;">
                 <img src="{img_path}" width="{args.image_width}px"><br>
-                <b>{address}</b><br>
+                <b>{address}</b>{timestamp_str}<br>
                 {photo_count} photo{"s" if photo_count > 1 else ""} - {display_names[dominant_class]}<br>
                 Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
             </div>
@@ -326,7 +337,7 @@ def execute(args):
         else:
             tooltip_html = f"""
             <div style="text-align: center;">
-                <img src="{img_path}" width="{args.image_width}px"><br>
+                <img src="{img_path}" width="{args.image_width}px">{timestamp_str}<br>
                 {photo_count} photo{"s" if photo_count > 1 else ""} - {display_names[dominant_class]}<br>
                 Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
             </div>

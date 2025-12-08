@@ -18,8 +18,8 @@ def register_command(subparsers):
     parser.add_argument(
         '--gap-threshold',
         type=float,
-        default=10.0,
-        help='Maximum gap in seconds before treating as new sub-trajectory (default: 10.0)'
+        default=1800.0,
+        help='Maximum gap in seconds before treating as new sub-trajectory (default: 1800.0 / 30 minutes)'
     )
     parser.add_argument(
         '--min-distance',

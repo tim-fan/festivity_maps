@@ -29,8 +29,8 @@ def register_command(subparsers):
     parser.add_argument(
         '--threshold',
         type=float,
-        default=0.008,
-        help='Threshold for not_festive classification (default: 0.008)'
+        default=0.01,
+        help='Threshold for lights detected classification (default: 0.01)'
     )
     parser.add_argument(
         '--image-width',
@@ -125,41 +125,39 @@ def execute(args):
     no_lights_mask = df['mean_probability'] < args.threshold
     df['festivity_class'] = 'no_lights'
     
-    # For the remaining photos, split into three equal groups
+    # For images with lights detected (>= threshold), use percentile-based classification
     festive_df = df[~no_lights_mask].copy()
     
     if len(festive_df) > 0:
-        # Sort by mean_probability and split into thirds
+        # Sort by mean_probability
         festive_df = festive_df.sort_values('mean_probability')
         n = len(festive_df)
         
-        # Calculate split points
-        low_end = n // 3
-        medium_end = 2 * n // 3
+        # Calculate percentile cutoffs
+        # Top 1% -> most_lights (yellow)
+        # Top 10% (excluding top 1%) -> many_lights (orange)
+        # Rest (bottom 90%) -> lights_detected (red)
+        top_1_percent_idx = int(n * 0.99)  # Start of top 1%
+        top_10_percent_idx = int(n * 0.90)  # Start of top 10%
         
-        # Assign classes based on index position
-        low_indices = festive_df.index[:low_end]
-        medium_indices = festive_df.index[low_end:medium_end]
-        high_indices = festive_df.index[medium_end:]
+        # Assign classes based on percentiles
+        bottom_indices = festive_df.index[:top_10_percent_idx]
+        middle_indices = festive_df.index[top_10_percent_idx:top_1_percent_idx]
+        top_indices = festive_df.index[top_1_percent_idx:]
         
-        df.loc[low_indices, 'festivity_class'] = 'some_lights'
-        df.loc[medium_indices, 'festivity_class'] = 'moderate_lights'
-        df.loc[high_indices, 'festivity_class'] = 'many_lights'
+        df.loc[bottom_indices, 'festivity_class'] = 'lights_detected'
+        df.loc[middle_indices, 'festivity_class'] = 'many_lights'
+        df.loc[top_indices, 'festivity_class'] = 'most_lights'
     
     # Print classification summary
     print("\nFestivity classification summary:")
-    for cls in ['no_lights', 'some_lights', 'moderate_lights', 'many_lights']:
+    for cls in ['no_lights', 'lights_detected', 'many_lights', 'most_lights']:
         count = (df['festivity_class'] == cls).sum()
         if count > 0:
             probs = df[df['festivity_class'] == cls]['mean_probability']
             print(f"  {cls.replace('_', ' ')}: {count} photos (probability range: {probs.min():.6f} - {probs.max():.6f})")
         else:
             print(f"  {cls.replace('_', ' ')}: 0 photos")
-        if count > 0:
-            probs = df[df['festivity_class'] == cls]['mean_probability']
-            print(f"  {cls}: {count} photos (probability range: {probs.min():.6f} - {probs.max():.6f})")
-        else:
-            print(f"  {cls}: 0 photos")
     
     # Create the map
     print("\nCreating map...")
@@ -266,22 +264,22 @@ def execute(args):
     # Define colors for each festivity class
     color_map = {
         'no_lights': 'gray',
-        'some_lights': 'darkred',
-        'moderate_lights': 'orange',
-        'many_lights': 'yellow'
+        'lights_detected': 'darkred',
+        'many_lights': 'orange',
+        'most_lights': 'yellow'
     }
     
     # Display names for categories
     display_names = {
         'no_lights': 'No Lights Detected',
-        'some_lights': 'Some Lights Detected',
-        'moderate_lights': 'Moderate Lights Detected',
-        'many_lights': 'Many Lights Detected'
+        'lights_detected': 'Lights Detected',
+        'many_lights': 'Many Lights Detected',
+        'most_lights': 'Most Lights Detected'
     }
     
     # Create feature groups for each festivity class
     feature_groups = {}
-    for cls in ['no_lights', 'some_lights', 'moderate_lights', 'many_lights']:
+    for cls in ['no_lights', 'lights_detected', 'many_lights', 'most_lights']:
         show = cls != 'no_lights'  # Hide no_lights by default
         feature_groups[cls] = folium.FeatureGroup(name=display_names[cls], show=show)
     
@@ -294,7 +292,7 @@ def execute(args):
     
     for (address, lat, lon), group in address_groups:
         # Determine the highest festivity class at this address
-        class_priority = {'many_lights': 4, 'moderate_lights': 3, 'some_lights': 2, 'no_lights': 1}
+        class_priority = {'most_lights': 4, 'many_lights': 3, 'lights_detected': 2, 'no_lights': 1}
         dominant_class = group.loc[group['festivity_class'].map(class_priority).idxmax(), 'festivity_class']
         
         # Get the highest probability image for the tooltip

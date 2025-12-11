@@ -22,6 +22,12 @@ def register_command(subparsers):
         help='Workspace root path (or use FESTIVITY_WORKSPACE env var)'
     )
     
+    parser.add_argument(
+        '--max-per-address',
+        action='store_true',
+        help='Show only the highest scoring image per address'
+    )
+    
     parser.set_defaults(func=execute)
 
 
@@ -35,32 +41,80 @@ def execute(args):
     
     # Get scored images from database
     conn = get_db_connection(workspace)
-    cursor = conn.execute("""
-        SELECT 
-            s.filename,
-            g.is_left,
-            g.lat,
-            g.lon,
-            g.timestamp,
-            g.heading,
-            g.offset_lat,
-            g.offset_lon,
-            g.address,
-            s.mean_probability
-        FROM festivity_scores s
-        LEFT JOIN gps_data g ON s.filename = g.filename
-        ORDER BY s.mean_probability DESC
-    """)
+    
+    if args.max_per_address:
+        # Get only the highest scoring image per address
+        # Use a more efficient query with a CTE (Common Table Expression)
+        cursor = conn.execute("""
+            WITH ranked_scores AS (
+                SELECT 
+                    s.filename,
+                    g.is_left,
+                    g.lat,
+                    g.lon,
+                    g.timestamp,
+                    g.heading,
+                    g.offset_lat,
+                    g.offset_lon,
+                    g.address,
+                    s.mean_probability,
+                    ROW_NUMBER() OVER (PARTITION BY g.address ORDER BY s.mean_probability DESC) as rn
+                FROM festivity_scores s
+                INNER JOIN gps_data g ON s.filename = g.filename
+                WHERE g.address IS NOT NULL AND g.address != 'none' AND g.address != ''
+            )
+            SELECT 
+                filename,
+                is_left,
+                lat,
+                lon,
+                timestamp,
+                heading,
+                offset_lat,
+                offset_lon,
+                address,
+                mean_probability
+            FROM ranked_scores
+            WHERE rn = 1
+            ORDER BY mean_probability DESC
+        """)
+    else:
+        # Get all scored images
+        cursor = conn.execute("""
+            SELECT 
+                s.filename,
+                g.is_left,
+                g.lat,
+                g.lon,
+                g.timestamp,
+                g.heading,
+                g.offset_lat,
+                g.offset_lon,
+                g.address,
+                s.mean_probability
+            FROM festivity_scores s
+            LEFT JOIN gps_data g ON s.filename = g.filename
+            ORDER BY s.mean_probability DESC
+        """)
     
     records = cursor.fetchall()
     conn.close()
     
     if not records:
-        print("No scored images found.")
-        print("Run 'festivity score' first to score images.")
+        if args.max_per_address:
+            print("No scored images with addresses found.")
+            print("Make sure you have:")
+            print("  1. Extracted GPS data with addresses (festivity extract-gps)")
+            print("  2. Scored images (festivity score)")
+        else:
+            print("No scored images found.")
+            print("Run 'festivity score' first to score images.")
         return 1
     
-    print(f"Loading {len(records)} scored images into FiftyOne...")
+    if args.max_per_address:
+        print(f"Loading {len(records)} addresses (max score per address) into FiftyOne...")
+    else:
+        print(f"Loading {len(records)} scored images into FiftyOne...")
     
     # Create FiftyOne dataset
     dataset_name = f"festivity_{workspace.name}"
@@ -126,6 +180,8 @@ def execute(args):
     
     print("\nLaunching FiftyOne App...")
     print("  - Sorted by festivity score (highest first)")
+    if args.max_per_address:
+        print("  - Showing only highest scoring image per address")
     print("  - Festivity score visible in sidebar by default")
     print("  - View 'festivity_heatmap' to see score heatmaps")
     print("  - Use Map view to see image locations")

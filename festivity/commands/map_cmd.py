@@ -1,10 +1,12 @@
 """Map command - visualize festivity scores on an interactive map."""
 from pathlib import Path
 import pandas as pd
+import numpy as np
 import folium
 from folium.plugins import LocateControl
 import shutil
 from PIL import Image
+from scipy.spatial import cKDTree
 from festivity.utils import get_workspace_path, ensure_workspace_initialized
 from festivity.db import get_db_connection
 from festivity.trajectory import calculate_trajectory_stats, format_duration, format_distance, format_speed
@@ -35,8 +37,8 @@ def register_command(subparsers):
     parser.add_argument(
         '--image-width',
         type=int,
-        default=200,
-        help='Width of thumbnail images in pixels (default: 200)'
+        default=400,
+        help='Width of thumbnail images in pixels (default: 400)'
     )
     parser.add_argument(
         '--show-addresses',
@@ -50,6 +52,97 @@ def register_command(subparsers):
         help='Create a self-contained deployment directory with HTML and images (for uploading to Netlify, etc.)'
     )
     parser.set_defaults(func=execute)
+
+
+def cluster_nearby_addresses(df, distance_threshold_m=10):
+    """
+    Cluster addresses that are within distance_threshold_m of each other.
+    Returns a dataframe with an additional 'cluster_id' column.
+    
+    Uses spatial clustering to group nearby markers, preventing overlapping
+    markers from OSM addresses that are very close together.
+    """
+    # Get unique address locations
+    unique_locs = df[['address_lat', 'address_lon']].drop_duplicates()
+    
+    if len(unique_locs) == 0:
+        df['cluster_id'] = 0
+        return df
+    
+    # Build KD-tree for clustering
+    coords = unique_locs[['address_lat', 'address_lon']].values
+    tree = cKDTree(coords)
+    
+    # Convert distance threshold from meters to degrees (approximate)
+    # At mid-latitudes: 1 degree ≈ 111km
+    distance_threshold_deg = distance_threshold_m / 111000.0
+    
+    # Find all pairs within threshold and build clusters
+    pairs = tree.query_pairs(r=distance_threshold_deg)
+    
+    # Use union-find to merge clusters
+    cluster_map = {}
+    next_cluster_id = 0
+    
+    def find_cluster(idx):
+        """Find root cluster for an index."""
+        if idx not in cluster_map:
+            return None
+        root = idx
+        while cluster_map[root] != root:
+            root = cluster_map[root]
+        return root
+    
+    def merge_clusters(idx1, idx2):
+        """Merge two indices into the same cluster."""
+        nonlocal next_cluster_id
+        c1 = find_cluster(idx1)
+        c2 = find_cluster(idx2)
+        
+        if c1 is None and c2 is None:
+            # Both new - create new cluster
+            cluster_map[idx1] = idx1
+            cluster_map[idx2] = idx1
+        elif c1 is None:
+            # idx1 is new, add to idx2's cluster
+            cluster_map[idx1] = c2
+        elif c2 is None:
+            # idx2 is new, add to idx1's cluster
+            cluster_map[idx2] = c1
+        elif c1 != c2:
+            # Merge two existing clusters
+            cluster_map[c2] = c1
+    
+    # Process all pairs
+    for idx1, idx2 in pairs:
+        merge_clusters(idx1, idx2)
+    
+    # Assign cluster IDs to all points
+    idx_to_cluster = {}
+    for idx in range(len(coords)):
+        root = find_cluster(idx)
+        if root is None:
+            # Singleton cluster
+            idx_to_cluster[idx] = next_cluster_id
+            next_cluster_id += 1
+        else:
+            if root not in idx_to_cluster:
+                idx_to_cluster[root] = next_cluster_id
+                next_cluster_id += 1
+            idx_to_cluster[idx] = idx_to_cluster[root]
+    
+    # Map back to original dataframe
+    unique_locs['temp_idx'] = range(len(unique_locs))
+    unique_locs['cluster_id'] = unique_locs['temp_idx'].map(idx_to_cluster)
+    
+    # Merge cluster_id back into original dataframe
+    df = df.merge(
+        unique_locs[['address_lat', 'address_lon', 'cluster_id']], 
+        on=['address_lat', 'address_lon'], 
+        how='left'
+    )
+    
+    return df
 
 
 def execute(args):
@@ -283,22 +376,34 @@ def execute(args):
         show = cls != 'no_lights'  # Hide no_lights by default
         feature_groups[cls] = folium.FeatureGroup(name=display_names[cls], show=show)
     
-    # Group by address to avoid duplicate markers
-    print("Grouping photos by address...")
-    address_groups = df.groupby(['address', 'address_lat', 'address_lon'])
+    # Cluster nearby addresses to avoid overlapping markers
+    print("Clustering nearby addresses...")
+    df = cluster_nearby_addresses(df, distance_threshold_m=10)
+    
+    # Group by cluster instead of individual addresses
+    print("Grouping photos by location cluster...")
+    cluster_groups = df.groupby('cluster_id')
     
     # Track images used in tooltips for deployment
     used_images = set()
     
-    for (address, lat, lon), group in address_groups:
-        # Determine the highest festivity class at this address
+    for cluster_id, group in cluster_groups:
+        # Use the centroid of all addresses in this cluster
+        lat = group['address_lat'].mean()
+        lon = group['address_lon'].mean()
+        
+        # Collect unique addresses in this cluster
+        unique_addresses = group['address'].unique()
+        address_display = unique_addresses[0] if len(unique_addresses) == 1 else f"{len(unique_addresses)} addresses"
+        
+        # Determine the highest festivity class in this cluster
         class_priority = {'most_lights': 4, 'many_lights': 3, 'lights_detected': 2, 'no_lights': 1}
         dominant_class = group.loc[group['festivity_class'].map(class_priority).idxmax(), 'festivity_class']
         
         # Get the highest probability image for the tooltip
         best_image_row = group.loc[group['mean_probability'].idxmax()]
         
-        # Get stats for this address
+        # Get stats for this cluster
         photo_count = len(group)
         mean_prob = group['mean_probability'].mean()
         max_prob = group['mean_probability'].max()
@@ -325,33 +430,53 @@ def execute(args):
         
         if args.show_addresses:
             tooltip_html = f"""
-            <div style="text-align: center;">
-                <img src="{img_path}" width="{args.image_width}px"><br>
-                <b>{address}</b>{timestamp_str}<br>
+            <div style="text-align: center; background-color: white; padding: 5px;">
+                <img src="{img_path}" width="{args.image_width}px" style="opacity: 1.0;"><br>
+                <b>{address_display}</b>{timestamp_str}<br>
                 {photo_count} photo{"s" if photo_count > 1 else ""} - {display_names[dominant_class]}<br>
                 Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
             </div>
             """
         else:
             tooltip_html = f"""
-            <div style="text-align: center;">
-                <img src="{img_path}" width="{args.image_width}px">{timestamp_str}<br>
+            <div style="text-align: center; background-color: white; padding: 5px;">
+                <img src="{img_path}" width="{args.image_width}px" style="opacity: 1.0;">{timestamp_str}<br>
                 {photo_count} photo{"s" if photo_count > 1 else ""} - {display_names[dominant_class]}<br>
                 Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
             </div>
             """
-        tooltip = folium.Tooltip(tooltip_html)
+        tooltip = folium.Tooltip(tooltip_html, sticky=False)
         
         # Add marker to the appropriate feature group
-        folium.CircleMarker(
+        # Use Circle (radius in meters) instead of CircleMarker (radius in pixels)
+        # so markers scale with zoom level
+        # Make "most lights" markers bigger for emphasis
+        radius_map = {
+            'no_lights': 7,
+            'lights_detected': 8,
+            'many_lights': 10,
+            'most_lights': 15
+        }
+        
+        # Style "most lights" markers differently to stand out
+        if dominant_class == 'most_lights':
+            # Darker border and thicker outline for yellow markers
+            border_color = "#72744B"  # 
+            border_weight = 1
+        else:
+            # Standard styling for other classes
+            border_color = color_map[dominant_class]
+            border_weight = 1
+        
+        folium.Circle(
             location=[lat, lon],
-            radius=8,
+            radius=radius_map[dominant_class],  # meters
             tooltip=tooltip,
-            color=color_map[dominant_class],
+            color=border_color,
             fill=True,
             fillColor=color_map[dominant_class],
             fillOpacity=0.7,
-            weight=2
+            weight=border_weight
         ).add_to(feature_groups[dominant_class])
     
     # Add all feature groups to map
@@ -421,6 +546,21 @@ def execute(args):
     '''
     
     m.get_root().html.add_child(folium.Element(stats_html))
+    
+    # Add custom CSS to override Folium's default tooltip opacity
+    tooltip_css = '''
+    <style>
+        .leaflet-tooltip {
+            opacity: 1.0 !important;
+            background-color: white !important;
+            border: 2px solid gray !important;
+        }
+        .leaflet-tooltip img {
+            opacity: 1.0 !important;
+        }
+    </style>
+    '''
+    m.get_root().html.add_child(folium.Element(tooltip_css))
     
     # Save the map
     m.save(str(output_path))

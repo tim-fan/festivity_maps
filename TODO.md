@@ -23,3 +23,13 @@
   * many lights detected
 * add map screenshot to readme
 * workspace setup/install instructions
+* trajectory stats - how many properties, how many were decorated at different level
+* fix thresholds to compare counts across trajectories
+* analysis - best street, best 100m, 
+* change size of images
+* reconsider the need to do exif rotations on import
+* remove address clustering from map command, move to gps command
+* can batch process while scoring?
+* continuous colorscale + size
+* fest map jumps between trajectories
+* glow effect makes neighbours unclickable

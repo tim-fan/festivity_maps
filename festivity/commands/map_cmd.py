@@ -260,16 +260,12 @@ def execute(args):
     center_lat = df['address_lat'].mean()
     center_lon = df['address_lon'].mean()
     
-    # Use minimal style when addresses are hidden, default OSM when showing addresses
-    if args.show_addresses:
-        m = folium.Map(location=[center_lat, center_lon])
-    else:
-        # Use CartoDB Positron for a minimal style without street labels
-        m = folium.Map(
-            location=[center_lat, center_lon],
-            tiles='CartoDB positron',
-            attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        )
+    # Use CartoDB DarkMatter for a clean dark style
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        tiles='CartoDB DarkMatter',
+        attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    )
     
     # Calculate bounds for zoom-to-extents
     sw = [df['address_lat'].min(), df['address_lon'].min()]
@@ -431,7 +427,7 @@ def execute(args):
         if args.show_addresses:
             tooltip_html = f"""
             <div style="text-align: center; background-color: white; padding: 5px;">
-                <img src="{img_path}" width="{args.image_width}px" style="opacity: 1.0;"><br>
+                <img src="{img_path}" width="{args.image_width}px" style="opacity: 1.0;" loading="lazy"><br>
                 <b>{address_display}</b>{timestamp_str}<br>
                 {photo_count} photo{"s" if photo_count > 1 else ""} - {display_names[dominant_class]}<br>
                 Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
@@ -440,12 +436,19 @@ def execute(args):
         else:
             tooltip_html = f"""
             <div style="text-align: center; background-color: white; padding: 5px;">
-                <img src="{img_path}" width="{args.image_width}px" style="opacity: 1.0;">{timestamp_str}<br>
+                <img src="{img_path}" width="{args.image_width}px" style="opacity: 1.0;" loading="lazy">{timestamp_str}<br>
                 {photo_count} photo{"s" if photo_count > 1 else ""} - {display_names[dominant_class]}<br>
                 Avg: {mean_prob:.4f} | Max: {max_prob:.4f}
             </div>
             """
-        tooltip = folium.Tooltip(tooltip_html, sticky=False)
+        
+        # Use Popup only (click/tap to view)
+        # Popups auto-center and appear above markers
+        popup = folium.Popup(
+            tooltip_html, 
+            max_width=args.image_width + 20,  # Add padding to max width
+            min_width=args.image_width + 20
+        )
         
         # Add marker to the appropriate feature group
         # Use Circle (radius in meters) instead of CircleMarker (radius in pixels)
@@ -458,20 +461,55 @@ def execute(args):
             'most_lights': 15
         }
         
-        # Style "most lights" markers differently to stand out
+        # Style markers - remove border on yellow markers for cleaner glow effect
         if dominant_class == 'most_lights':
-            # Darker border and thicker outline for yellow markers
-            border_color = "#72744B"  # 
-            border_weight = 1
+            border_color = 'yellow'  # Match fill color, no dark border
+            border_weight = 0  # No border
         else:
             # Standard styling for other classes
             border_color = color_map[dominant_class]
             border_weight = 1
         
+        # Add glow effect for "most lights" markers using layered circles (better performance than CSS filters)
+        if dominant_class == 'most_lights':
+            # Add two outer glow circles (from largest to smallest)
+            folium.Circle(
+                location=[lat, lon],
+                radius=radius_map[dominant_class] * 2.5,
+                color='yellow',
+                fill=True,
+                fillColor='yellow',
+                fillOpacity=0.15,
+                weight=0
+            ).add_to(feature_groups[dominant_class])
+            
+            folium.Circle(
+                location=[lat, lon],
+                radius=radius_map[dominant_class] * 1.6,
+                color='yellow',
+                fill=True,
+                fillColor='yellow',
+                fillOpacity=0.35,
+                weight=0
+            ).add_to(feature_groups[dominant_class])
+        
+        # Add subtle glow for "many lights" (orange) markers
+        elif dominant_class == 'many_lights':
+            folium.Circle(
+                location=[lat, lon],
+                radius=radius_map[dominant_class] * 1.5,
+                color='orange',
+                fill=True,
+                fillColor='orange',
+                fillOpacity=0.2,
+                weight=0
+            ).add_to(feature_groups[dominant_class])
+        
+        # Add the main marker on top
         folium.Circle(
             location=[lat, lon],
             radius=radius_map[dominant_class],  # meters
-            tooltip=tooltip,
+            popup=popup,
             color=border_color,
             fill=True,
             fillColor=color_map[dominant_class],
@@ -547,20 +585,69 @@ def execute(args):
     
     m.get_root().html.add_child(folium.Element(stats_html))
     
-    # Add custom CSS to override Folium's default tooltip opacity
-    tooltip_css = '''
+    # Add custom CSS for popups with mobile responsiveness
+    styles_css = '''
     <style>
-        .leaflet-tooltip {
+        /* Make glow circles non-interactive so they don't block clicks */
+        .leaflet-interactive[fill-opacity="0.15"],
+        .leaflet-interactive[fill-opacity="0.2"],
+        .leaflet-interactive[fill-opacity="0.35"] {
+            pointer-events: none !important;
+        }
+        
+        /* Popup styling */
+        .leaflet-popup-content-wrapper {
             opacity: 1.0 !important;
             background-color: white !important;
-            border: 2px solid gray !important;
         }
-        .leaflet-tooltip img {
+        .leaflet-popup-content {
+            margin: 0 !important;
+        }
+        .leaflet-popup-content img {
             opacity: 1.0 !important;
+            height: auto;
+            max-width: 100%;
+        }
+        
+        /* Mobile-specific adjustments */
+        @media (max-width: 768px) {
+            /* Popup positioning - center horizontally on screen */
+            .leaflet-popup {
+                /* Force popups to appear above markers on mobile */
+                bottom: 0 !important;
+            }
+            
+            .leaflet-popup-content-wrapper {
+                max-width: 90vw !important;
+            }
+            
+            .leaflet-popup-content img {
+                max-width: 85vw !important;
+                width: auto !important;
+            }
+            
+            .leaflet-popup-content > div {
+                max-width: 100%;
+                padding: 3px !important;
+                font-size: 12px;
+            }
+        }
+        
+        /* Extra small screens */
+        @media (max-width: 480px) {
+            .leaflet-popup-content-wrapper {
+                max-width: 95vw !important;
+            }
+            .leaflet-popup-content img {
+                max-width: 90vw !important;
+            }
+            .leaflet-popup-content > div {
+                font-size: 11px;
+            }
         }
     </style>
     '''
-    m.get_root().html.add_child(folium.Element(tooltip_css))
+    m.get_root().html.add_child(folium.Element(styles_css))
     
     # Save the map
     m.save(str(output_path))

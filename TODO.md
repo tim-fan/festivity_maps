@@ -33,3 +33,4 @@
 * continuous colorscale + size
 * fest map jumps between trajectories
 * glow effect makes neighbours unclickable
+* 360 camera with depth processesing https://github.com/Insta360-Research-Team/DAP

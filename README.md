@@ -3,7 +3,7 @@
 
 Goal - given an image taken from the street at night, possibly containing a house, possibly decorated with festive lights, provide a "festivity measure" in order to sort the most festive images from the least.
 
-Then take this model, drive around the neighbourhood continuously taking images, and automatically detect and rank the most festive houses. Perhaps produce a map of the most festive areas in the neighbourhood 📍🎅.
+Then take this model, drive around the neighbourhood continuously taking images, and automatically detect and rank the most festive houses. Perhaps produce a [map of the most festive areas in the neighborhood](https://tim-fan.github.io/festivity/mira_mesa/) 📍🎅.
 
 <div style="display: flex; gap: 10px;">
     <img src="./doc/000000000004.jpg" alt="festive house" style="width: 49%;">

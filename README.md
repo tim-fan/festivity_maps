@@ -178,3 +178,5 @@ Perhaps this would be the most robust way to quantify festive-ness. However woul
 * Project onto map to produce festivity maps for the neighbourhood 
 * Bigger dataset
 
+## See also
+* [NASA Sees Holiday Lights from Space](https://youtu.be/GP3dxLhaPZk?si=ojYDgPO8FckwZfbt) 
